@@ -38,7 +38,8 @@
        (lambda ()
          (sync (handle-evt l tcp-accept)))
        (lambda (in out)
-         (void (thread (lambda () (start-client in out)))))))))
+         (define thd (thread (lambda () (start-client in out))))
+         (loop))))))
 
 (module+ test
   ;; Any code in this `test` submodule runs when this file is run using DrRacket
