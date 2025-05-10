@@ -38,7 +38,10 @@
        (lambda ()
          (sync (handle-evt l tcp-accept)))
        (lambda (in out)
-         (define thd (thread (lambda () (start-client in out))))
+         (define thd (thread (lambda () (start-client passwd
+                                                      proxy-address proxy-port
+                                                      dst-address dst-port
+                                                      in out))))
          (loop))))))
 
 (module+ test
