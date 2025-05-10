@@ -32,8 +32,8 @@
   (with-handlers ((exn:break? (lambda (_)
                                 (custodian-shutdown-all (current-custodian))
                                 (void))))
+    (define l (tcp-listen local-port))
     (let loop ()
-      (define l (tcp-listen local-port))
       (call-with-values
        (lambda ()
          (sync (handle-evt l tcp-accept)))
