@@ -25,7 +25,20 @@
 
 ;; Code here
 
+(require racket/tcp "client.rkt")
 
+;; A trojan2tcp converter
+(define (start-tunnel passwd proxy-address proxy-port dst-address dst-port local-port)
+  (with-handlers ((exn:break? (lambda (_)
+                                (custodian-shutdown-all (current-custodian))
+                                (void))))
+    (let loop ()
+      (define l (tcp-listen local-port))
+      (call-with-values
+       (lambda ()
+         (sync (handle-evt l tcp-accept)))
+       (lambda (in out)
+         (void (thread (lambda () (start-client in out)))))))))
 
 (module+ test
   ;; Any code in this `test` submodule runs when this file is run using DrRacket
@@ -40,11 +53,31 @@
   ;; does not run when this file is required by another module. Documentation:
   ;; http://docs.racket-lang.org/guide/Module_Syntax.html#%28part._main-and-test%29
 
-  (require racket/cmdline)
-  (define who (box "world"))
+  (require racket/cmdline racket/contract raco/command-name)
+  (define passwd (box #f))
+  (define proxy-address (box #f))
+  (define proxy-port (box #f))
+  (define dst-address (box #f))
+  (define dst-port (box #f))
+  (define local-port (box #f))
   (command-line
-    #:program "my-program"
+    #:program (short-program+command-name)
     #:once-each
-    [("-n" "--name") name "Who to say hello to" (set-box! who name)]
+    [("-p" "--passwd") p "The password used for verification." (set-box! passwd p)]
+    [("--proxy-address") a "The address of the proxy server." (set-box! proxy-address a)]
+    [("--proxy-port") p "The tcp port of the proxy server." (set-box! proxy-port (string->number p))]
+    [("--dst-address") a "The address of the destination server." (set-box! dst-address a)]
+    [("--dst-port") p "The tcp port of the destination server." (set-box! dst-port (string->number p))]
+    [("--local-port") p "The tcp port that this client listens to." (set-box! local-port (string->number p))]
     #:args ()
-    (printf "hello ~a~n" (unbox who))))
+    (define/contract passwd-value string? (unbox passwd))
+    (define/contract proxy-address-value string? (unbox proxy-address))
+    (define/contract proxy-port-value port-number? (unbox proxy-port))
+    (define/contract dst-address-value string? (unbox dst-address))
+    (define/contract dst-port-value port-number? (unbox dst-port))
+    (define/contract local-port-value port-number? (unbox local-port))
+    (start-tunnel passwd-value
+                  proxy-address-value proxy-port-value
+                  dst-address-value dst-port-value
+                  local-port-value)
+    ))

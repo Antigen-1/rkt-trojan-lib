@@ -10,8 +10,8 @@
   (define-values (in out) (ssl-connect proxy-address proxy-port 'secure))
   ;; Check the shape of dst-address
   (define dst-address-type
-    (cond ((regexp-match #px"^[0-9]+(\\.[0-9]+){3}$" dst-address) 'ipv4)
-          ((regexp-match #px"^[0-9a-fA-F]{4}(:[0-9a-fA-F]{4}){7}$" dst-address) 'ipv6)
+    (cond ((regexp-match? #px"^[0-9]+(\\.[0-9]+){3}$" dst-address) 'ipv4)
+          ((regexp-match? #px"^[0-9a-fA-F]{4}(:[0-9a-fA-F]{4}){7}$" dst-address) 'ipv6)
           (else 'domain)))
   (define send-thd
     (thread

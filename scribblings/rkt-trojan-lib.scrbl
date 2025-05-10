@@ -7,4 +7,4 @@
 
 @defmodule[rkt-trojan-lib]
 
-Package Description Here
+My trojan protocol implementation.

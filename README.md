@@ -1,3 +1,3 @@
 rkt-trojan-lib
 ==============
-README text here.
+My trojan protocol implementation.
