@@ -25,7 +25,7 @@
 
 ;; Code here
 
-(require racket/tcp "client.rkt" openssl)
+(require racket/tcp racket/exn "client.rkt" openssl)
 
 (define (make-custom-client-context private-key-path)
   (let ((ctx (ssl-make-client-context
@@ -34,20 +34,6 @@
     ; Certificate and hostname verification are disabled
     (ssl-set-verify! ctx #f)
     (ssl-set-verify-hostname! ctx #f)
-    ; No weak cipher suites
-    (ssl-set-ciphers! ctx "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!SSLv2")
-    ; Seal context so further changes cannot weaken it
-    (ssl-seal-context! ctx)
-    ctx))
-(define (make-default-client-context)
-  ;; Many servers does not support tls1.1 by default
-  (let ([ctx (ssl-make-client-context 'tls12)])
-    ; Load default verification sources (root certificates)
-    (ssl-load-default-verify-sources! ctx)
-    ; Require certificate verification
-    (ssl-set-verify! ctx #t)
-    ; Require hostname verification
-    (ssl-set-verify-hostname! ctx #t)
     ; No weak cipher suites
     (ssl-set-ciphers! ctx "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!SSLv2")
     ; Seal context so further changes cannot weaken it
@@ -66,11 +52,19 @@
        (lambda ()
          (sync (handle-evt l tcp-accept)))
        (lambda (in out)
-         (define thd (thread (lambda () (start-client passwd
-                                                      proxy-address proxy-port
-                                                      dst-address dst-port
-                                                      in out
-                                                      #:context ctx))))
+         (define thd (thread
+                      (lambda ()
+                        (define cust (make-custodian (current-custodian)))
+                        (with-handlers ((exn:fail?
+                                         (lambda (e)
+                                           (custodian-shutdown-all cust)
+                                           (displayln (exn->string e) (current-error-port)))))
+                          (parameterize ((current-custodian cust))
+                            (start-client passwd
+                                          proxy-address proxy-port
+                                          dst-address dst-port
+                                          in out
+                                          #:context ctx))))))
          (loop))))))
 
 (module+ test
@@ -118,5 +112,5 @@
                   local-port-value
                   #:context (if key-path-value
                                 (make-custom-client-context key-path-value)
-                                (make-default-client-context)))
+                                'secure))
     ))
