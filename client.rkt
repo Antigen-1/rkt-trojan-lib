@@ -1,5 +1,5 @@
 #lang racket/base
-(require openssl "render.rkt" "data.rkt" racket/port racket/contract racket/tcp)
+(require openssl "render.rkt" "data.rkt" racket/port racket/contract racket/tcp net/cookies/common)
 (provide (contract-out (start-client (-> string?
                                          string? port-number?
                                          string? port-number?
@@ -12,7 +12,9 @@
   (define dst-address-type
     (cond ((regexp-match? #px"^[0-9]+(\\.[0-9]+){3}$" dst-address) 'ipv4)
           ((regexp-match? #px"^[0-9a-fA-F]{4}(:[0-9a-fA-F]{4}){7}$" dst-address) 'ipv6)
-          (else 'domain)))
+          ((domain-value? dst-address) 'domain)
+          (else (raise-argument-error 'start-client "ipv4, ipv6 address or (sub)domain name"
+                                      dst-address))))
   (define send-thd
     (thread
      (lambda ()
