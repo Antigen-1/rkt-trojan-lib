@@ -39,6 +39,20 @@
     ; Seal context so further changes cannot weaken it
     (ssl-seal-context! ctx)
     ctx))
+(define (make-default-client-context)
+  ;; Many servers does not support tls1.1 by default
+  (let ([ctx (ssl-make-client-context 'tls12)])
+    ; Load default verification sources (root certificates)
+    (ssl-load-default-verify-sources! ctx)
+    ; Require certificate verification
+    (ssl-set-verify! ctx #t)
+    ; Require hostname verification
+    (ssl-set-verify-hostname! ctx #t)
+    ; No weak cipher suites
+    (ssl-set-ciphers! ctx "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!SSLv2")
+    ; Seal context so further changes cannot weaken it
+    (ssl-seal-context! ctx)
+    ctx))
 
 ;; A trojan2tcp converter
 (define (start-tunnel passwd proxy-address proxy-port dst-address dst-port local-port
@@ -104,5 +118,5 @@
                   local-port-value
                   #:context (if key-path-value
                                 (make-custom-client-context key-path-value)
-                                'secure))
+                                (make-default-client-context)))
     ))
