@@ -18,16 +18,26 @@
   (define send-thd
     (thread
      (lambda ()
-       (copy-port (client-data->input-port
-                   (client-data passwd
-                                (request 'connect dst-address-type dst-address dst-port)
-                                payload))
-                  out)
-       (close-output-port out))))
+       (dynamic-wind
+         void
+         (lambda ()
+           (copy-port (client-data->input-port
+                       (client-data passwd
+                                    (request 'connect dst-address-type dst-address dst-port)
+                                    payload))
+                      out))
+         (lambda ()
+           (close-input-port payload)
+           (close-output-port out))))))
   (define recv-thd
     (thread (lambda ()
-              (copy-port in output)
-              (close-output-port output))))
+              (dynamic-wind
+                void
+                (lambda ()
+                  (copy-port in output))
+                (lambda ()
+                  (close-input-port in)
+                  (close-output-port output))))))
   (let loop ((pool (list recv-thd send-thd)))
     (if (null? pool)
         (void)

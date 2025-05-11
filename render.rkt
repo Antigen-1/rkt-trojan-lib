@@ -53,7 +53,7 @@
   (match h
     ((struct client-data (passwd request payload))
      (input-port-append
-      #t
+      #f
       (open-input-string (SHA224 passwd))
       (open-input-bytes #"\r\n")
       (open-input-bytes (render-request request))
