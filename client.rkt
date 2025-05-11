@@ -1,13 +1,15 @@
 #lang racket/base
 (require openssl "render.rkt" "data.rkt" racket/port racket/contract racket/tcp)
-(provide (contract-out (start-client (-> string?
-                                         string? port-number?
-                                         string? port-number?
-                                         input-port? output-port?
+(provide (contract-out (start-client (->* (string?
+                                           string? port-number?
+                                           string? port-number?
+                                           input-port? output-port?)
+                                          (#:context (or/c ssl-client-context? ssl-protocol-symbol/c))
                                          any))))
 
-(define (start-client passwd proxy-address proxy-port dst-address dst-port payload output)
-  (define-values (in out) (ssl-connect proxy-address proxy-port 'secure))
+(define (start-client passwd proxy-address proxy-port dst-address dst-port payload output
+                      #:context (ctx 'secure))
+  (define-values (in out) (ssl-connect proxy-address proxy-port ctx))
   ;; Check the shape of dst-address
   (define dst-address-type
     (cond ((regexp-match? #px"^[0-9]+(\\.[0-9]+){3}$" dst-address) 'ipv4)

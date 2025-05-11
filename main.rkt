@@ -25,10 +25,24 @@
 
 ;; Code here
 
-(require racket/tcp "client.rkt")
+(require racket/tcp "client.rkt" openssl)
+
+(define (make-custom-client-context private-key-path)
+  (let ((ctx (ssl-make-client-context
+              'auto
+              #:private-key (list 'pem private-key-path))))
+    ; Certificate and hostname verification are disabled
+    (ssl-set-verify! ctx #f)
+    (ssl-set-verify-hostname! ctx #f)
+    ; No weak cipher suites
+    (ssl-set-ciphers! ctx "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!SSLv2")
+    ; Seal context so further changes cannot weaken it
+    (ssl-seal-context! ctx)
+    ctx))
 
 ;; A trojan2tcp converter
-(define (start-tunnel passwd proxy-address proxy-port dst-address dst-port local-port)
+(define (start-tunnel passwd proxy-address proxy-port dst-address dst-port local-port
+                      #:context (ctx 'secure))
   (with-handlers ((exn:break? (lambda (_)
                                 (custodian-shutdown-all (current-custodian))
                                 (void))))
@@ -41,7 +55,8 @@
          (define thd (thread (lambda () (start-client passwd
                                                       proxy-address proxy-port
                                                       dst-address dst-port
-                                                      in out))))
+                                                      in out
+                                                      #:context ctx))))
          (loop))))))
 
 (module+ test
@@ -64,6 +79,7 @@
   (define dst-address (box #f))
   (define dst-port (box #f))
   (define local-port (box #f))
+  (define key-path (box #f))
   (command-line
     #:program (short-program+command-name)
     #:once-each
@@ -73,6 +89,7 @@
     [("--dst-address") a "The address of the destination server." (set-box! dst-address a)]
     [("--dst-port") p "The tcp port of the destination server." (set-box! dst-port (string->number p))]
     [("--local-port") p "The tcp port that this client listens to." (set-box! local-port (string->number p))]
+    [("--custom-private-key") p "Use the custom private key instead." (set-box! key-path p)]
     #:args ()
     (define/contract passwd-value string? (unbox passwd))
     (define/contract proxy-address-value string? (unbox proxy-address))
@@ -80,8 +97,12 @@
     (define/contract dst-address-value string? (unbox dst-address))
     (define/contract dst-port-value port-number? (unbox dst-port))
     (define/contract local-port-value port-number? (unbox local-port))
+    (define/contract key-path-value (or/c #f (and/c path-string? file-exists?)) (unbox key-path))
     (start-tunnel passwd-value
                   proxy-address-value proxy-port-value
                   dst-address-value dst-port-value
-                  local-port-value)
+                  local-port-value
+                  #:context (if key-path-value
+                                (make-custom-client-context key-path-value)
+                                'secure))
     ))
