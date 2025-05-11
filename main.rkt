@@ -27,22 +27,8 @@
 
 (require racket/tcp racket/exn "client.rkt" openssl)
 
-(define (make-custom-client-context private-key-path)
-  (let ((ctx (ssl-make-client-context
-              'auto
-              #:private-key (list 'pem private-key-path))))
-    ; Certificate and hostname verification are disabled
-    (ssl-set-verify! ctx #f)
-    (ssl-set-verify-hostname! ctx #f)
-    ; No weak cipher suites
-    (ssl-set-ciphers! ctx "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!SSLv2")
-    ; Seal context so further changes cannot weaken it
-    (ssl-seal-context! ctx)
-    ctx))
-
 ;; A trojan2tcp converter
-(define (start-tunnel passwd proxy-address proxy-port dst-address dst-port local-port
-                      #:context (ctx 'secure))
+(define (start-tunnel passwd proxy-address proxy-port dst-address dst-port local-port)
   (with-handlers ((exn:break? (lambda (_)
                                 (custodian-shutdown-all (current-custodian))
                                 (void))))
@@ -63,8 +49,7 @@
                             (start-client passwd
                                           proxy-address proxy-port
                                           dst-address dst-port
-                                          in out
-                                          #:context ctx))))))
+                                          in out))))))
          (loop))))))
 
 (module+ test
@@ -109,8 +94,5 @@
     (start-tunnel passwd-value
                   proxy-address-value proxy-port-value
                   dst-address-value dst-port-value
-                  local-port-value
-                  #:context (if key-path-value
-                                (make-custom-client-context key-path-value)
-                                'secure))
+                  local-port-value)
     ))
