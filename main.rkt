@@ -25,32 +25,46 @@
 
 ;; Code here
 
-(require racket/tcp racket/exn "client.rkt" openssl)
+(require racket/tcp racket/place racket/exn racket/async-channel "client.rkt")
 
 ;; A trojan2tcp converter
 (define (start-tunnel passwd proxy-address proxy-port dst-address dst-port local-port)
-  (with-handlers ((exn:break? (lambda (_)
-                                (custodian-shutdown-all (current-custodian))
-                                (void))))
+  (define cust (make-custodian (current-custodian)))
+  (parameterize ((current-custodian cust))
     (define l (tcp-listen local-port))
-    (let loop ()
-      (call-with-values
-       (lambda ()
-         (sync (handle-evt l tcp-accept)))
-       (lambda (in out)
-         (define thd (thread
-                      (lambda ()
+    (with-handlers ((exn:break? (lambda (_)
+                                  (tcp-close l)
+                                  (custodian-shutdown-all cust))))
+      (define places-channel (make-async-channel))
+      (define report-thread
+        (thread (lambda ()
+                  (define err (current-error-port))
+                  (let/cc cc
+                    (let loop ((pls null))
+                      (displayln (apply sync (handle-evt places-channel (lambda (pl) (cc (loop (cons pl pls)))))
+                                        pls)
+                                 err)
+                      (loop pls))))))
+      (let loop ()
+        (call-with-values
+         (lambda ()
+           (sync (handle-evt l tcp-accept)))
+         (lambda (in out)
+           ; If (place-enabled?) == #f, places are simulated using threads.
+           (define pl (place/context
+                          ch
                         (define cust (make-custodian (current-custodian)))
                         (with-handlers ((exn:fail?
                                          (lambda (e)
                                            (custodian-shutdown-all cust)
-                                           (displayln (exn->string e) (current-error-port)))))
+                                           (place-channel-put ch (exn->string e)))))
                           (parameterize ((current-custodian cust))
                             (start-client passwd
                                           proxy-address proxy-port
                                           dst-address dst-port
-                                          in out))))))
-         (loop))))))
+                                          in out)))))
+           (async-channel-put places-channel pl)
+           (loop)))))))
 
 (module+ test
   ;; Any code in this `test` submodule runs when this file is run using DrRacket
