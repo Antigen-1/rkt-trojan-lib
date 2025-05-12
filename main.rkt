@@ -100,6 +100,7 @@
     [("--local-port") p "The tcp port that this client listens to." (set-box! local-port (string->number p))]
     #:multi
     [("--cert") c "Add other verification sources." (set-box! certs (cons c (unbox certs)))]
+    [("--ignore-certs") "Ignore current verification sources." (set-box! certs null)]
     #:args ()
     (define/contract passwd-value string? (unbox passwd))
     (define/contract proxy-address-value string? (unbox proxy-address))
