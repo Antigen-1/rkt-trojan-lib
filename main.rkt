@@ -25,10 +25,11 @@
 
 ;; Code here
 
-(require racket/tcp racket/place racket/exn racket/async-channel "client.rkt")
+(require racket/tcp racket/place racket/exn racket/async-channel openssl "client.rkt")
 
 ;; A trojan2tcp converter
-(define (start-tunnel passwd proxy-address proxy-port dst-address dst-port local-port)
+(define (start-tunnel passwd proxy-address proxy-port dst-address dst-port local-port
+                      #:sources (ss (ssl-default-verify-sources)))
   (define cust (make-custodian (current-custodian)))
   (parameterize ((current-custodian cust))
     (define l (tcp-listen local-port))
@@ -58,7 +59,8 @@
                                          (lambda (e)
                                            (custodian-shutdown-all cust)
                                            (place-channel-put ch (exn->string e)))))
-                          (parameterize ((current-custodian cust))
+                          (parameterize ((current-custodian cust)
+                                         (ssl-default-verify-sources ss))
                             (start-client passwd
                                           proxy-address proxy-port
                                           dst-address dst-port
@@ -79,7 +81,7 @@
   ;; does not run when this file is required by another module. Documentation:
   ;; http://docs.racket-lang.org/guide/Module_Syntax.html#%28part._main-and-test%29
 
-  (require racket/cmdline racket/contract raco/command-name openssl)
+  (require racket/cmdline racket/contract raco/command-name)
   (define passwd (box #f))
   (define proxy-address (box #f))
   (define proxy-port (box #f))
@@ -112,9 +114,9 @@
                             (list/c 'macosx-keychain (or/c #f path-string?)))])
         (listof source/c))
       (unbox certs))
-    (parameterize ((ssl-default-verify-sources certs-value))
-      (start-tunnel passwd-value
-                    proxy-address-value proxy-port-value
-                    dst-address-value dst-port-value
-                    local-port-value))
-    ))
+    (start-tunnel passwd-value
+                  proxy-address-value proxy-port-value
+                  dst-address-value dst-port-value
+                  local-port-value
+                  #:sources certs-value)
+  ))
