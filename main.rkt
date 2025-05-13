@@ -99,14 +99,15 @@
     [("--dst-port") p "The tcp port of the destination server." (set-box! dst-port (string->number p))]
     [("--local-port") p "The tcp port that this client listens to." (set-box! local-port (string->number p))]
     #:multi
-    [("--cert-dir") c "Add other directories that contain verification sources."
+    [("--cert-dir") c
+                    "Add other directories that contain verification sources. Files are automatically rehashed."
                     (if (directory-exists? c)
-                        (let ((s (find-executable-path "openssl")))
+                        (let ((s (find-executable-path "c_rehash")))
                           (if s
-                              (cond ((system* s "c_rehash" c))
-                                    (else (raise-user-error 'command-line "Fail to run \"openssl c_rehash\"")))
+                              (cond ((system* s c))
+                                    (else (raise-user-error 'command-line "Fail to run \"c_rehash ~a\"" c)))
                               (let ()
-                                (displayln "Cannot find openssl executable.")
+                                (displayln "Cannot find c_rehash executable.")
                                 (displayln (format "~a should contain PEM files with hashed symbolic links." c)))))
                         (raise-argument-error 'command-line "directory-exists?" c))
                     (set-box! certs (cons `(directory ,c) (unbox certs)))]
