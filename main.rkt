@@ -81,7 +81,7 @@
   ;; does not run when this file is required by another module. Documentation:
   ;; http://docs.racket-lang.org/guide/Module_Syntax.html#%28part._main-and-test%29
 
-  (require racket/cmdline racket/contract raco/command-name)
+  (require racket/cmdline racket/contract racket/system raco/command-name)
   (define passwd (box #f))
   (define proxy-address (box #f))
   (define proxy-port (box #f))
@@ -99,7 +99,17 @@
     [("--dst-port") p "The tcp port of the destination server." (set-box! dst-port (string->number p))]
     [("--local-port") p "The tcp port that this client listens to." (set-box! local-port (string->number p))]
     #:multi
-    [("--cert") c "Add other verification sources." (set-box! certs (cons c (unbox certs)))]
+    [("--cert-dir") c "Add other directories that contain verification sources."
+                    (if (directory-exists? c)
+                        (let ((s (find-executable-path "openssl")))
+                          (if s
+                              (cond ((system* s "c_rehash" c))
+                                    (else (raise-user-error 'command-line "Fail to run \"openssl c_rehash\"")))
+                              (let ()
+                                (displayln "Cannot find openssl executable.")
+                                (displayln (format "~a should contain PEM files with hashed symbolic links." c)))))
+                        (raise-argument-error 'command-line "directory-exists?" c))
+                    (set-box! certs (cons `(directory ,c) (unbox certs)))]
     [("--ignore-certs") "Ignore current verification sources." (set-box! certs null)]
     #:args ()
     (define/contract passwd-value string? (unbox passwd))
