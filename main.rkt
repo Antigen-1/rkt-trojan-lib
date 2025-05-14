@@ -30,8 +30,8 @@
 ;; A trojan2tcp converter
 (define (start-tunnel passwd proxy-address proxy-port dst-address dst-port local-port
                       #:sources (ss (ssl-default-verify-sources))
-                      #:allow-host-set (as #f)
-                      #:reject-host-set (rs #f))
+                      #:allow-ip-set (as #f)
+                      #:reject-ip-set (rs #f))
   (define cust (make-custodian (current-custodian)))
   (parameterize ((current-custodian cust))
     (define l (tcp-listen local-port))
@@ -103,8 +103,8 @@
   (define dst-port (box #f))
   (define local-port (box #f))
   (define certs (box (ssl-default-verify-sources)))
-  (define allowed-host-set (box #f))
-  (define blocked-host-set (box #f))
+  (define allowed-ip-set (box #f))
+  (define blocked-ip-set (box #f))
   (command-line
     #:program (short-program+command-name)
     #:once-each
@@ -114,10 +114,10 @@
     [("--dst-address") a "The address of the destination server." (set-box! dst-address a)]
     [("--dst-port") p "The tcp port of the destination server." (set-box! dst-port (string->number p))]
     [("--local-port") p "The tcp port that this client listens to." (set-box! local-port (string->number p))]
-    [("--allow-hosts") str "Allow a list of hosts to connect to the local port."
-                       (set-box! allowed-host-set (read (open-input-string str)))]
-    [("--reject-hosts") str "Stop a list of hosts from connecting to the local port."
-                        (set-box! blocked-host-set (read (open-input-string str)))]
+    [("--allow-addresses") str "Allow a list of addresses to connect to the local port."
+                           (set-box! allowed-ip-set (read (open-input-string str)))]
+    [("--reject-addresses") str "Stop a list of addresses from connecting to the local port."
+                            (set-box! blocked-ip-set (read (open-input-string str)))]
     #:multi
     [("--cert-dir") c
                     "Add other directories that contain verification sources. Files are automatically rehashed."
@@ -139,12 +139,12 @@
     (define/contract dst-address-value string? (unbox dst-address))
     (define/contract dst-port-value port-number? (unbox dst-port))
     (define/contract local-port-value port-number? (unbox local-port))
-    (define/contract allowed-host-set-value
+    (define/contract allowed-ip-set-value
       (or/c #f (listof string?))
-      (unbox allowed-host-set))
-    (define/contract blocked-host-set-value
+      (unbox allowed-ip-set))
+    (define/contract blocked-ip-set-value
       (or/c #f (listof string?))
-      (unbox blocked-host-set))
+      (unbox blocked-ip-set))
     (define/contract certs-value
       (let ([source/c (or/c path-string?
                             (list/c 'directory path-string?)
@@ -157,6 +157,6 @@
                   dst-address-value dst-port-value
                   local-port-value
                   #:sources certs-value
-                  #:allow-host-set (and allowed-host-set-value (apply set allowed-host-set-value))
-                  #:reject-host-set (and blocked-host-set-value (apply set blocked-host-set-value)))
+                  #:allow-ip-set (and allowed-ip-set-value (apply set allowed-ip-set-value))
+                  #:reject-ip-set (and blocked-ip-set-value (apply set blocked-ip-set-value)))
   ))
