@@ -157,6 +157,6 @@
                   dst-address-value dst-port-value
                   local-port-value
                   #:sources certs-value
-                  #:allow-host-set (apply set allowed-host-set-value)
-                  #:reject-host-set (apply set blocked-host-set-value))
+                  #:allow-host-set (and allowed-host-set-value (apply set allowed-host-set-value))
+                  #:reject-host-set (and blocked-host-set-value (apply set blocked-host-set-value)))
   ))
