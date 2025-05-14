@@ -25,11 +25,13 @@
 
 ;; Code here
 
-(require racket/tcp racket/place racket/exn racket/async-channel openssl "client.rkt")
+(require racket/tcp racket/place racket/exn racket/set racket/async-channel openssl "client.rkt")
 
 ;; A trojan2tcp converter
 (define (start-tunnel passwd proxy-address proxy-port dst-address dst-port local-port
-                      #:sources (ss (ssl-default-verify-sources)))
+                      #:sources (ss (ssl-default-verify-sources))
+                      #:allow-host-set (as #f)
+                      #:reject-host-set (rs #f))
   (define cust (make-custodian (current-custodian)))
   (parameterize ((current-custodian cust))
     (define l (tcp-listen local-port))
@@ -46,27 +48,39 @@
                                         pls)
                                  err)
                       (loop pls))))))
-      (let loop ()
-        (call-with-values
-         (lambda ()
-           (sync (handle-evt l tcp-accept)))
-         (lambda (in out)
-           ; If (place-enabled?) == #f, places are simulated using threads.
-           (define pl (place/context
-                          ch
-                        (define cust (make-custodian (current-custodian)))
-                        (with-handlers ((exn:fail?
-                                         (lambda (e)
-                                           (custodian-shutdown-all cust)
-                                           (place-channel-put ch (exn->string e)))))
-                          (parameterize ((current-custodian cust)
-                                         (ssl-default-verify-sources ss))
-                            (start-client passwd
-                                          proxy-address proxy-port
-                                          dst-address dst-port
-                                          in out)))))
-           (async-channel-put places-channel pl)
-           (loop)))))))
+      (let/cc cc
+        (let loop ()
+          (define (continue) (cc (loop)))
+          (call-with-values
+           (lambda ()
+             (sync (handle-evt l tcp-accept)))
+           (lambda (in out)
+             ; Check the other end of the connection.
+             (define-values (_ ad) (tcp-addresses in))
+             (if (and (or (not as) (set-member? as ad))
+                      (or (not rs) (not (set-member? rs ad))))
+                 (void)
+                 (begin
+                   (close-input-port in)
+                   (close-output-port out)
+                   (displayln (format "Connection from ~a is rejected." ad))
+                   (continue)))
+             ; If (place-enabled?) == #f, places are simulated using threads.
+             (define pl (place/context
+                            ch
+                          (define cust (make-custodian (current-custodian)))
+                          (with-handlers ((exn:fail?
+                                           (lambda (e)
+                                             (custodian-shutdown-all cust)
+                                             (place-channel-put ch (exn->string e)))))
+                            (parameterize ((current-custodian cust)
+                                           (ssl-default-verify-sources ss))
+                              (start-client passwd
+                                            proxy-address proxy-port
+                                            dst-address dst-port
+                                            in out)))))
+             (async-channel-put places-channel pl)
+             (loop))))))))
 
 (module+ test
   ;; Any code in this `test` submodule runs when this file is run using DrRacket
@@ -89,6 +103,8 @@
   (define dst-port (box #f))
   (define local-port (box #f))
   (define certs (box (ssl-default-verify-sources)))
+  (define allowed-host-set (box #f))
+  (define blocked-host-set (box #f))
   (command-line
     #:program (short-program+command-name)
     #:once-each
@@ -98,6 +114,10 @@
     [("--dst-address") a "The address of the destination server." (set-box! dst-address a)]
     [("--dst-port") p "The tcp port of the destination server." (set-box! dst-port (string->number p))]
     [("--local-port") p "The tcp port that this client listens to." (set-box! local-port (string->number p))]
+    [("--allow-hosts") str "Allow a list of hosts to connect to the local port."
+                       (set-box! allowed-host-set (read (open-input-string str)))]
+    [("--reject-hosts") str "Stop a list of hosts from connecting to the local port."
+                        (set-box! blocked-host-set (read (open-input-string str)))]
     #:multi
     [("--cert-dir") c
                     "Add other directories that contain verification sources. Files are automatically rehashed."
@@ -119,6 +139,12 @@
     (define/contract dst-address-value string? (unbox dst-address))
     (define/contract dst-port-value port-number? (unbox dst-port))
     (define/contract local-port-value port-number? (unbox local-port))
+    (define/contract allowed-host-set-value
+      (or/c #f (listof string?))
+      (unbox allowed-host-set))
+    (define/contract blocked-host-set-value
+      (or/c #f (listof string?))
+      (unbox blocked-host-set))
     (define/contract certs-value
       (let ([source/c (or/c path-string?
                             (list/c 'directory path-string?)
@@ -130,5 +156,7 @@
                   proxy-address-value proxy-port-value
                   dst-address-value dst-port-value
                   local-port-value
-                  #:sources certs-value)
+                  #:sources certs-value
+                  #:allow-host-set (apply set allowed-host-set-value)
+                  #:reject-host-set (apply set blocked-host-set-value))
   ))
