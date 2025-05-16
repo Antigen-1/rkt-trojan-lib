@@ -16,37 +16,33 @@
                           ((4) 'ipv4)
                           ((6) 'ipv6))
                         as))))
-  (define tag (make-continuation-prompt-tag))
-  (call-with-continuation-prompt
-   (lambda ()
-     (define send-thd
-       (thread
-        (lambda ()
-          (with-handlers ((exn:fail? (lambda (e) (abort-current-continuation tag e))))
-            (dynamic-wind
-              void
-              (lambda ()
-                (copy-port (client-data->input-port
-                            (client-data passwd
-                                         (request 'connect dst-address-type dst-address-value dst-port)
-                                         payload))
-                           out))
-              (lambda ()
-                (close-input-port payload)
-                (close-output-port out)))))))
-     (define recv-thd
-       (thread (lambda ()
-                 (with-handlers ((exn:fail? (lambda (e) (abort-current-continuation tag e))))
-                   (dynamic-wind
-                     void
-                     (lambda ()
-                       (copy-port in output))
-                     (lambda ()
-                       (close-input-port in)
-                       (close-output-port output)))))))
-     (let loop ((pool (list recv-thd send-thd)))
-       (if (null? pool)
-           (void)
-           (loop (remove (apply sync pool) pool)))))
-   tag
-   (lambda (e) (raise e))))
+  (define raise-cc (let/cc cc1 (raise (let/cc cc2 (cc1 cc2)))))
+  (define send-thd
+    (thread
+     (lambda ()
+       (with-handlers ((exn:fail? (lambda (e) (raise-cc e))))
+         (dynamic-wind
+           void
+           (lambda ()
+             (copy-port (client-data->input-port
+                         (client-data passwd
+                                      (request 'connect dst-address-type dst-address-value dst-port)
+                                      payload))
+                        out))
+           (lambda ()
+             (close-input-port payload)
+             (close-output-port out)))))))
+  (define recv-thd
+    (thread (lambda ()
+              (with-handlers ((exn:fail? (lambda (e) (raise-cc e))))
+                (dynamic-wind
+                  void
+                  (lambda ()
+                    (copy-port in output))
+                  (lambda ()
+                    (close-input-port in)
+                    (close-output-port output)))))))
+  (let loop ((pool (list recv-thd send-thd)))
+    (if (null? pool)
+        (void)
+        (loop (remove (apply sync pool) pool)))))
