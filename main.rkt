@@ -80,7 +80,7 @@
                  (begin
                    (close-input-port in)
                    (close-output-port out)
-                   (displayln (format "Connection from ~a is rejected." ad))
+                   (displayln (format "~a: Connection from ~a is rejected." name (ip-address->string ad)))
                    (continue)))
              ; If (place-enabled?) == #f, places are simulated using threads.
              (define pl (place/context
