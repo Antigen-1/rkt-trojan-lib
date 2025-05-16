@@ -25,16 +25,32 @@
 
 ;; Code here
 
-(require racket/tcp racket/place racket/exn racket/set racket/async-channel openssl "client.rkt")
+(require racket/tcp racket/place racket/exn racket/async-channel racket/match
+         openssl
+         "client.rkt" "config.rkt"
+         net/ip)
+
+;; Utilities for network sets
+(define (pairs->network-set l)
+  (map
+   (lambda (p)
+     (match p
+       ((network-pattern ip mask)
+        (make-network (make-ip-address ip) (make-ip-address mask)))))
+   l))
+(define (network-set-member nets addr)
+  (and (findf (lambda (net) (network-member net addr))
+              nets)
+       #t))
 
 ;; A trojan2tcp converter
-(define (start-tunnel passwd proxy-address proxy-port dst-address dst-port local-port
+(define (start-tunnel name passwd proxy-address proxy-port dst-address dst-port local-address local-port
                       #:sources (ss (ssl-default-verify-sources))
-                      #:allow-ip-set (as #f)
-                      #:reject-ip-set (rs #f))
+                      #:allow-network-set (as #f)
+                      #:reject-network-set (rs #f))
   (define cust (make-custodian (current-custodian)))
   (parameterize ((current-custodian cust))
-    (define l (tcp-listen local-port))
+    (define l (tcp-listen local-port 4 #f local-address))
     (with-handlers ((exn:break? (lambda (_)
                                   (tcp-close l)
                                   (custodian-shutdown-all cust))))
@@ -56,9 +72,10 @@
              (sync (handle-evt l tcp-accept)))
            (lambda (in out)
              ; Check the other end of the connection.
-             (define-values (_ ad) (tcp-addresses in))
-             (if (and (or (not as) (set-member? as ad))
-                      (or (not rs) (not (set-member? rs ad))))
+             (define ad (call-with-values (lambda () (tcp-addresses in))
+                                          (lambda (_ a) (make-ip-address a))))
+             (if (and (or (not as) (network-set-member as ad))
+                      (or (not rs) (not (network-set-member rs ad))))
                  (void)
                  (begin
                    (close-input-port in)
@@ -72,7 +89,7 @@
                           (with-handlers ((exn:fail?
                                            (lambda (e)
                                              (custodian-shutdown-all cust)
-                                             (place-channel-put ch (exn->string e)))))
+                                             (place-channel-put ch (format "~a: ~a" name (exn->string e))))))
                             (parameterize ((current-custodian cust)
                                            (ssl-default-verify-sources ss))
                               (start-client passwd
@@ -87,7 +104,7 @@
   ;; or with `raco test`. The code here does not run when this file is
   ;; required by another module.
 
-  (check-equal? (+ 2 2) 4))
+  #;(check-equal? (+ 2 2) 4))
 
 (module+ main
   ;; (Optional) main submodule. Put code here if you need it to be executed when
@@ -95,29 +112,17 @@
   ;; does not run when this file is required by another module. Documentation:
   ;; http://docs.racket-lang.org/guide/Module_Syntax.html#%28part._main-and-test%29
 
-  (require racket/cmdline racket/contract racket/system raco/command-name)
-  (define passwd (box #f))
-  (define proxy-address (box #f))
-  (define proxy-port (box #f))
-  (define dst-address (box #f))
-  (define dst-port (box #f))
-  (define local-port (box #f))
+  (require racket/cmdline racket/contract racket/system racket/file racket/pretty
+           raco/command-name)
   (define certs (box (ssl-default-verify-sources)))
-  (define allowed-ip-set (box #f))
-  (define blocked-ip-set (box #f))
+  (define config (box #f))
   (command-line
-    #:program (short-program+command-name)
-    #:once-each
-    [("-p" "--passwd") p "The password used for verification." (set-box! passwd p)]
-    [("--proxy-address") a "The address of the proxy server." (set-box! proxy-address a)]
-    [("--proxy-port") p "The tcp port of the proxy server." (set-box! proxy-port (string->number p))]
-    [("--dst-address") a "The address of the destination server." (set-box! dst-address a)]
-    [("--dst-port") p "The tcp port of the destination server." (set-box! dst-port (string->number p))]
-    [("--local-port") p "The tcp port that this client listens to." (set-box! local-port (string->number p))]
-    [("--allow-addresses") str "Allow a list of addresses to connect to the local port."
-                           (set-box! allowed-ip-set (read (open-input-string str)))]
-    [("--reject-addresses") str "Stop a list of addresses from connecting to the local port."
-                            (set-box! blocked-ip-set (read (open-input-string str)))]
+   #:program (short-program+command-name)
+   #:once-each
+   [("--config")
+    c
+    "Read this configure file if the `start` command is used, or generate a new configure file if the `new-config` command is used."
+    (set-box! config c)]
     #:multi
     [("--cert-dir") c
                     "Add other directories that contain verification sources. Files are automatically rehashed."
@@ -132,31 +137,49 @@
                         (raise-argument-error 'command-line "directory-exists?" c))
                     (set-box! certs (cons `(directory ,c) (unbox certs)))]
     [("--ignore-certs") "Ignore current verification sources." (set-box! certs null)]
-    #:args ()
-    (define/contract passwd-value string? (unbox passwd))
-    (define/contract proxy-address-value string? (unbox proxy-address))
-    (define/contract proxy-port-value port-number? (unbox proxy-port))
-    (define/contract dst-address-value string? (unbox dst-address))
-    (define/contract dst-port-value port-number? (unbox dst-port))
-    (define/contract local-port-value port-number? (unbox local-port))
-    (define/contract allowed-ip-set-value
-      (or/c #f (listof string?))
-      (unbox allowed-ip-set))
-    (define/contract blocked-ip-set-value
-      (or/c #f (listof string?))
-      (unbox blocked-ip-set))
-    (define/contract certs-value
-      (let ([source/c (or/c path-string?
-                            (list/c 'directory path-string?)
-                            (list/c 'win32-store string?)
-                            (list/c 'macosx-keychain (or/c #f path-string?)))])
-        (listof source/c))
-      (unbox certs))
-    (start-tunnel passwd-value
-                  proxy-address-value proxy-port-value
-                  dst-address-value dst-port-value
-                  local-port-value
-                  #:sources certs-value
-                  #:allow-ip-set (and allowed-ip-set-value (apply set allowed-ip-set-value))
-                  #:reject-ip-set (and blocked-ip-set-value (apply set blocked-ip-set-value)))
+    #:args (command)
+    (define/contract config-path
+      path-string?
+      (unbox config))
+    (case command
+      (("new-config")
+       (call-with-output-file
+         config-path
+         (lambda (out)
+           (pretty-write default-config out))
+         #:exists 'error))
+      (("start")
+       (define/contract cert-list
+         (let ([source/c (or/c path-string?
+                               (list/c 'directory path-string?)
+                               (list/c 'win32-store string?)
+                               (list/c 'macosx-keychain (or/c #f path-string?)))])
+           (listof source/c))
+         (unbox certs))
+       (define config-value
+         (file->value config-path))
+       (match config-value
+         ((config-pattern password remote-address remote-port tunnels)
+          (define cust (make-custodian (current-custodian)))
+          (with-handlers ((exn:break? (lambda (_) (custodian-shutdown-all cust))))
+            (parameterize ((current-custodian cust))
+              (for-each
+               (lambda (t)
+                 (match t
+                   ((tunnel-pattern name dest-address dest-port local-address local-port allow block)
+                    (void (thread
+                           (lambda ()
+                             (start-tunnel name password
+                                           remote-address remote-port
+                                           dest-address dest-port
+                                           local-address local-port
+                                           #:sources cert-list
+                                           #:allow-network-set (and allow (pairs->network-set allow))
+                                           #:reject-network-set (and block (pairs->network-set block)))))))))
+               tunnels)
+              (let loop ()
+                (sleep 30)
+                (collect-garbage 'incremental)
+                (loop))))))))
+
   ))

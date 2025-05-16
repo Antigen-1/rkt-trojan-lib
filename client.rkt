@@ -1,5 +1,5 @@
 #lang racket/base
-(require openssl "render.rkt" "data.rkt" racket/port racket/contract racket/tcp net/cookies/common)
+(require openssl "render.rkt" "data.rkt" racket/port racket/contract racket/tcp net/cookies/common net/ip)
 (provide (contract-out (start-client (-> string?
                                          string? port-number?
                                          string? port-number?
@@ -9,12 +9,13 @@
 (define (start-client passwd proxy-address proxy-port dst-address dst-port payload output)
   (define-values (in out) (ssl-connect proxy-address proxy-port 'secure))
   ;; Check the shape of dst-address
-  (define dst-address-type
-    (cond ((regexp-match? #px"^[0-9]+(\\.[0-9]+){3}$" dst-address) 'ipv4)
-          ((regexp-match? #px"^[0-9a-fA-F]{4}(:[0-9a-fA-F]{4}){7}$" dst-address) 'ipv6)
-          ((domain-value? dst-address) 'domain)
-          (else (raise-argument-error 'start-client "ipv4, ipv6 address or (sub)domain name"
-                                      dst-address))))
+  (define-values (dst-address-type dst-address-value)
+    (cond ((domain-value? dst-address) (values 'domain dst-address))
+          (else (define as (make-ip-address dst-address))
+                (values (case (ip-address-version as)
+                          ((4) 'ipv4)
+                          ((6) 'ipv6))
+                        as))))
   (define send-thd
     (thread
      (lambda ()
@@ -23,7 +24,7 @@
          (lambda ()
            (copy-port (client-data->input-port
                        (client-data passwd
-                                    (request 'connect dst-address-type dst-address dst-port)
+                                    (request 'connect dst-address-type dst-address-value dst-port)
                                     payload))
                       out))
          (lambda ()

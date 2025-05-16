@@ -1,6 +1,6 @@
 #lang info
 (define collection "rkt-trojan-lib")
-(define deps '("base"))
+(define deps '("base" "net-ip"))
 (define build-deps '("scribble-lib" "racket-doc" "rackunit-lib"))
 (define scribblings '(("scribblings/rkt-trojan-lib.scrbl" ())))
 (define pkg-desc "Description Here")

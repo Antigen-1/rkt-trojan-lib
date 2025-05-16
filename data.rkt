@@ -1,5 +1,5 @@
 #lang racket/base
-(require racket/contract racket/tcp)
+(require racket/contract racket/tcp net/ip)
 (provide (contract-out
           (struct client-data ((passwd string?)
                                (request request?)
@@ -7,7 +7,7 @@
           ;; Currently UDP is not supported
           (struct request ((command (or/c 'connect #;'udp-associate))
                            (address-type (or/c 'ipv4 'domain 'ipv6))
-                           (address string?)
+                           (address (or/c string? ip-address?))
                            (port port-number?)))))
 
 (struct client-data (passwd request payload))
