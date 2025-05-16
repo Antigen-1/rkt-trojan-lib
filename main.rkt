@@ -121,7 +121,7 @@
    #:once-each
    [("--config")
     c
-    "Read this configure file if the `start` command is used, or generate a new configure file if the `new-config` command is used."
+    "Read this configuration file if the `start` command is used, or generate a new configuration file if the `new-config` command is used."
     (set-box! config c)]
     #:multi
     [("--cert-dir") c
