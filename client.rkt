@@ -16,11 +16,11 @@
                           ((4) 'ipv4)
                           ((6) 'ipv6))
                         as))))
-  (define raise-cc (let/cc cc1 (raise (let/cc cc2 (cc1 cc2)))))
+  (define exn-ch (make-channel))
   (define send-thd
     (thread
      (lambda ()
-       (with-handlers ((exn:fail? (lambda (e) (raise-cc e))))
+       (with-handlers ((exn:fail? (lambda (e) (channel-put exn-ch e))))
          (dynamic-wind
            void
            (lambda ()
@@ -34,7 +34,7 @@
              (close-output-port out)))))))
   (define recv-thd
     (thread (lambda ()
-              (with-handlers ((exn:fail? (lambda (e) (raise-cc e))))
+              (with-handlers ((exn:fail? (lambda (e) (channel-put exn-ch e))))
                 (dynamic-wind
                   void
                   (lambda ()
@@ -45,4 +45,8 @@
   (let loop ((pool (list recv-thd send-thd)))
     (if (null? pool)
         (void)
-        (loop (remove (apply sync pool) pool)))))
+        (let ()
+          (define r (apply sync exn-ch pool))
+          (cond ((exn? r) (raise r))
+                (else (loop (remove r pool))))
+          ))))

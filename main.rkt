@@ -25,7 +25,7 @@
 
 ;; Code here
 
-(require racket/tcp racket/place racket/exn racket/async-channel racket/match
+(require racket/tcp racket/place racket/exn racket/async-channel racket/match racket/list
          openssl
          "client.rkt" "config.rkt"
          net/ip)
@@ -60,10 +60,10 @@
                   (define err (current-error-port))
                   (let/cc cc
                     (let loop ((pls null))
-                      (displayln (apply sync (handle-evt places-channel (lambda (pl) (cc (loop (cons pl pls)))))
-                                        pls)
-                                 err)
-                      (loop pls))))))
+                      (match-define (cons ch str) (apply sync (handle-evt places-channel (lambda (pl) (cc (loop (cons pl pls)))))
+                                                         pls))
+                      (displayln str err)
+                      (loop (remf (lambda (pl) (equal? pl ch)) pls)))))))
       (let/cc cc
         (let loop ()
           (define (continue) (cc (loop)))
@@ -89,7 +89,7 @@
                           (with-handlers ((exn:fail?
                                            (lambda (e)
                                              (custodian-shutdown-all cust)
-                                             (place-channel-put ch (format "~a: ~a" name (exn->string e))))))
+                                             (place-channel-put ch (cons ch (format "~a: ~a" name (exn->string e)))))))
                             (parameterize ((current-custodian cust)
                                            (ssl-default-verify-sources ss))
                               (start-client passwd
