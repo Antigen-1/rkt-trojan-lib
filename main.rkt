@@ -80,9 +80,11 @@
                  (begin
                    (close-input-port in)
                    (close-output-port out)
-                   (displayln (format "~a: Connection from ~a is rejected." name (ip-address->string ad)))
+                   (displayln (format "~a: A connection from ~a is rejected." name (ip-address->string ad)))
                    (continue)))
              ; If (place-enabled?) == #f, places are simulated using threads.
+             ; These places all send a (cons/c place-channel? string?) pair through the place channel when they exit.
+             ; This message is caught by report-thread, and the string is reported and the corresponding place descriptor is removed from the list.
              (define pl (place/context
                             ch
                           (define cust (make-custodian (current-custodian)))
@@ -95,7 +97,8 @@
                               (start-client passwd
                                             proxy-address proxy-port
                                             dst-address dst-port
-                                            in out)))))
+                                            in out)
+                              (place-channel-put ch (cons ch (format "~a: A place terminates." name)))))))
              (async-channel-put places-channel pl)
              (loop))))))))
 
@@ -160,6 +163,7 @@
          (file->value config-path))
        (match config-value
          ((config-pattern password remote-address remote-port tunnels)
+          (define thd-ch (make-channel))
           (define cust (make-custodian (current-custodian)))
           (with-handlers ((exn:break? (lambda (_) (custodian-shutdown-all cust))))
             (parameterize ((current-custodian cust))
@@ -177,9 +181,10 @@
                                            #:allow-network-set (and allow (pairs->network-set allow))
                                            #:reject-network-set (and block (pairs->network-set block)))))))))
                tunnels)
-              (let loop ()
-                (sleep 30)
-                (collect-garbage 'incremental)
-                (loop))))))))
+              (let/cc cc
+                (let loop ((thds null))
+                  (loop (remove (apply sync (handle-evt thd-ch (lambda (thd) (cc (loop (cons thd thds)))))
+                                       thds)
+                                thds))))))))))
 
   ))
