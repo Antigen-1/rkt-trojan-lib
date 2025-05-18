@@ -25,7 +25,7 @@
 
 ;; Code here
 
-(require racket/tcp racket/place racket/exn racket/async-channel racket/match racket/list
+(require racket/tcp racket/exn racket/match
          openssl
          "client.rkt" "config.rkt"
          net/ip)
@@ -44,63 +44,41 @@
        #t))
 
 ;; A trojan2tcp converter
-(define (start-tunnel name passwd proxy-address proxy-port dst-address dst-port local-address local-port
+(define (start-tunnel name passwd proxy-address proxy-port dst-address dst-port listen-evt
                       #:sources (ss (ssl-default-verify-sources))
                       #:allow-network-set (as #f)
                       #:reject-network-set (rs #f))
-  (define cust (make-custodian (current-custodian)))
-  (parameterize ((current-custodian cust))
-    (define l (tcp-listen local-port 4 #f local-address))
-    (with-handlers ((exn:break? (lambda (_)
-                                  (tcp-close l)
-                                  (custodian-shutdown-all cust))))
-      (define places-channel (make-async-channel))
-      (define report-thread
-        (thread (lambda ()
-                  (define err (current-error-port))
-                  (let/cc cc
-                    (let loop ((pls null))
-                      (match-define (cons ch str) (apply sync (handle-evt places-channel (lambda (pl) (cc (loop (cons pl pls)))))
-                                                         pls))
-                      (displayln str err)
-                      (loop (remf (lambda (pl) (equal? pl ch)) pls)))))))
-      (let/cc cc
-        (let loop ()
-          (define (continue) (cc (loop)))
-          (call-with-values
-           (lambda ()
-             (sync (handle-evt l tcp-accept)))
-           (lambda (in out)
-             ; Check the other end of the connection.
-             (define ad (call-with-values (lambda () (tcp-addresses in))
-                                          (lambda (_ a) (make-ip-address a))))
-             (if (and (or (not as) (network-set-member as ad))
-                      (or (not rs) (not (network-set-member rs ad))))
-                 (void)
-                 (begin
-                   (close-input-port in)
-                   (close-output-port out)
-                   (displayln (format "~a: A connection from ~a is rejected." name (ip-address->string ad)))
-                   (continue)))
-             ; If (place-enabled?) == #f, places are simulated using threads.
-             ; These places all send a (cons/c place-channel? string?) pair through the place channel when they exit.
-             ; This message is caught by report-thread, and the string is reported and the corresponding place descriptor is removed from the list.
-             (define pl (place/context
-                            ch
-                          (define cust (make-custodian (current-custodian)))
-                          (with-handlers ((exn:fail?
-                                           (lambda (e)
-                                             (custodian-shutdown-all cust)
-                                             (place-channel-put ch (cons ch (format "~a: ~a" name (exn->string e)))))))
-                            (parameterize ((current-custodian cust)
-                                           (ssl-default-verify-sources ss))
-                              (start-client passwd
-                                            proxy-address proxy-port
-                                            dst-address dst-port
-                                            in out)
-                              (place-channel-put ch (cons ch (format "~a: A place terminates." name)))))))
-             (async-channel-put places-channel pl)
-             (loop))))))))
+  (define err (current-error-port))
+  (let/cc cc
+    (let loop ()
+      (define (continue) (cc (loop)))
+      (call-with-values
+       (lambda ()
+         (sync listen-evt))
+       (lambda (in out)
+         ; Check the other end of the connection.
+         (define ad (call-with-values (lambda () (tcp-addresses in))
+                                      (lambda (_ a) (make-ip-address a))))
+         (if (and (or (not as) (network-set-member as ad))
+                  (or (not rs) (not (network-set-member rs ad))))
+             (void)
+             (begin
+               (close-input-port in)
+               (close-output-port out)
+               (displayln (format "~a: A connection from ~a is rejected." name (ip-address->string ad)))
+               (continue)))
+         (define thd (thread
+                      (lambda ()
+                        (with-handlers ((exn:fail?
+                                         (lambda (e)
+                                           (displayln (format "~a: ~a" name (exn->string e)) err))))
+                          (parameterize ((ssl-default-verify-sources ss))
+                            (start-client passwd
+                                          proxy-address proxy-port
+                                          dst-address dst-port
+                                          in out)
+                            (displayln (format "~a: A trojan tunnel terminates." name) err))))))
+         (loop))))))
 
 (module+ test
   ;; Any code in this `test` submodule runs when this file is run using DrRacket
@@ -163,9 +141,12 @@
          (file->value config-path))
        (match config-value
          ((config-pattern password remote-address remote-port tunnels)
-          (define thd-ch (make-channel))
           (define cust (make-custodian (current-custodian)))
-          (with-handlers ((exn:break? (lambda (_) (custodian-shutdown-all cust))))
+          (define out (current-output-port))
+          (with-handlers ((exn:break? (lambda (_) (custodian-shutdown-all cust)))
+                          (exn:fail? (lambda (e)
+                                       (custodian-shutdown-all cust)
+                                       (raise e))))
             (parameterize ((current-custodian cust))
               (for-each
                (lambda (t)
@@ -173,18 +154,25 @@
                    ((tunnel-pattern name dest-address dest-port local-address local-port allow block)
                     (void (thread
                            (lambda ()
-                             (start-tunnel name password
-                                           remote-address remote-port
-                                           dest-address dest-port
-                                           local-address local-port
-                                           #:sources cert-list
-                                           #:allow-network-set (and allow (pairs->network-set allow))
-                                           #:reject-network-set (and block (pairs->network-set block)))))))))
-               tunnels)
-              (let/cc cc
-                (let loop ((thds null))
-                  (loop (remove (apply sync (handle-evt thd-ch (lambda (thd) (cc (loop (cons thd thds)))))
-                                       thds)
-                                thds))))))))))
-
+                             (define l (tcp-listen local-port 4 #f local-address))
+                             (displayln (format "~a ~a:~a" name local-address local-port) out)
+                             (dynamic-wind
+                               void
+                               (lambda ()
+                                 (start-tunnel name password
+                                               remote-address remote-port
+                                               dest-address dest-port
+                                               (handle-evt l tcp-accept)
+                                               #:sources cert-list
+                                               #:allow-network-set (and allow (pairs->network-set allow))
+                                               #:reject-network-set (and block (pairs->network-set block))))
+                               (lambda () (tcp-close l)))))))))
+                 tunnels)
+              (let loop ()
+                (sync (handle-evt
+                       (alarm-evt (+ (current-milliseconds) 5000))
+                       (lambda (_)
+                         (collect-garbage 'incremental)
+                         (loop)))))
+              ))))))
   ))
