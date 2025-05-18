@@ -49,6 +49,7 @@
                       #:allow-network-set (as #f)
                       #:reject-network-set (rs #f))
   (define err (current-error-port))
+  (define out (current-output-port))
   (let/cc cc
     (let loop ()
       (define (continue) (cc (loop)))
@@ -77,7 +78,7 @@
                                           proxy-address proxy-port
                                           dst-address dst-port
                                           in out)
-                            (displayln (format "~a: A trojan tunnel terminates." name) err))))))
+                            (displayln (format "~a: A trojan tunnel is closed." name) out))))))
          (loop))))))
 
 (module+ test
