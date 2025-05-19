@@ -8,7 +8,7 @@
      (bytes-append
       (case command
         ((connect) #"\x01")
-        #;((udp-associate) #"\x03"))
+        ((udp-associate) #"\x03"))
       (case address-type
         ((ipv4) #"\x01")
         ((domain) #"\x03")

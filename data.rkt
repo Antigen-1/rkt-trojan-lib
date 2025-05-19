@@ -5,7 +5,7 @@
                                (request request?)
                                (payload input-port?)))
           ;; Currently UDP is not supported
-          (struct request ((command (or/c 'connect #;'udp-associate))
+          (struct request ((command (or/c 'connect 'udp-associate))
                            (address-type (or/c 'ipv4 'domain 'ipv6))
                            (address (or/c string? ip-address?))
                            (port port-number?)))))

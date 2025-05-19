@@ -44,7 +44,7 @@
        #t))
 
 ;; A trojan2tcp converter
-(define (start-tunnel name passwd proxy-address proxy-port dst-address dst-port listen-evt
+(define (start-tunnel name mode passwd proxy-address proxy-port dst-address dst-port listen-evt
                       #:sources (ss (ssl-default-verify-sources)))
   (define err (current-error-port))
   (define out (current-output-port))
@@ -59,7 +59,8 @@
                                        (lambda (e)
                                          (displayln (format "~a: ~a" name (exn->string e)) err))))
                         (parameterize ((ssl-default-verify-sources ss))
-                          (start-client passwd
+                          (start-client mode
+                                        passwd
                                         proxy-address proxy-port
                                         dst-address dst-port
                                         in out)
@@ -138,7 +139,7 @@
               (for-each
                (lambda (t)
                  (match t
-                   ((tunnel-pattern name dest-address dest-port local-address local-port allow block)
+                   ((tunnel-pattern name mode dest-address dest-port local-address local-port allow block)
                     (define tunnel-config-table
                       (hash
                        '#:name name
@@ -153,10 +154,10 @@
                                               (or (not allow-network-set)
                                                   (network-set-member allow-network-set addr))
                                               (or (not block-network-set)
-                                                  (network-set-member block-network-set addr)))))))
+                                                  (not (network-set-member block-network-set addr))))))))
                     (void (thread
                            (lambda ()
-                             (start-tunnel name password
+                             (start-tunnel name (string->symbol mode) password
                                            remote-address remote-port
                                            dest-address dest-port
                                            (make-tcp-evt tunnel-config-table)

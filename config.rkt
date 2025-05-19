@@ -11,6 +11,7 @@
         ("tunnels"
          .
          (#hash(("name" . "tunnel1")
+                ("mode" . "connect")
                 ("dest-address" . "example2.com")
                 ("dest-port" . 8080)
                 ("local-address" . "127.0.0.1")
@@ -30,8 +31,9 @@
 (define-match-expander tunnel-pattern
   (lambda (stx)
     (syntax-case stx ()
-      [(_ name dest-address dest-port local-address local-port allow-network block-network)
-       #'(hash "name" name
+      [(_ name mode dest-address dest-port local-address local-port allow-network block-network)
+       #'(hash "name" (? string? name)
+               "mode" (and (or "connect" "udp-associate") mode)
                "dest-address" (? string? dest-address)
                "dest-port" (? port-number? dest-port)
                "local-address" (? string? local-address)
@@ -52,9 +54,9 @@
   (match default-config
     ((config-pattern p ra rp ts)
      (for-each (lambda (t)
-                 (check-match t (tunnel-pattern _ _ _ _ _ _ _))
+                 (check-match t (tunnel-pattern _ _ _ _ _ _ _ _))
                  (match t
-                   ((tunnel-pattern nm da dp la lp an bn)
+                   ((tunnel-pattern nm md da dp la lp an bn)
                     (for-each (lambda (n) (check-match n (network-pattern _ _)))
                               (append (if an an null)
                                       (if bn bn null))))))

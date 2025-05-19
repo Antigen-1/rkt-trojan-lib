@@ -1,12 +1,13 @@
 #lang racket/base
 (require openssl "render.rkt" "data.rkt" racket/port racket/contract racket/tcp net/cookies/common net/ip)
-(provide (contract-out (start-client (-> string?
+(provide (contract-out (start-client (-> (or/c 'connect 'udp-associate)
+                                         string?
                                          string? port-number?
                                          string? port-number?
                                          input-port? output-port?
                                          any))))
 
-(define (start-client passwd proxy-address proxy-port dst-address dst-port payload output)
+(define (start-client mode passwd proxy-address proxy-port dst-address dst-port payload output)
   (define-values (in out) (ssl-connect proxy-address proxy-port 'secure))
   ;; Check the shape of dst-address
   (define-values (dst-address-type dst-address-value)
@@ -26,7 +27,7 @@
            (lambda ()
              (copy-port (client-data->input-port
                          (client-data passwd
-                                      (request 'connect dst-address-type dst-address-value dst-port)
+                                      (request mode dst-address-type dst-address-value dst-port)
                                       payload))
                         out))
            (lambda ()
