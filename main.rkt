@@ -166,7 +166,7 @@
                                             tunnel-config-table)
                                            #:sources cert-list
                                            ))))
-                    (displayln (format "~a ~a:~a" name local-address local-port) out))))
+                    (displayln (format "~a ~a:~a ~a" name local-address local-port mode) out))))
                  tunnels)
               (let loop ()
                 (sync (handle-evt
