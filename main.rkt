@@ -45,41 +45,26 @@
 
 ;; A trojan2tcp converter
 (define (start-tunnel name passwd proxy-address proxy-port dst-address dst-port listen-evt
-                      #:sources (ss (ssl-default-verify-sources))
-                      #:allow-network-set (as #f)
-                      #:reject-network-set (rs #f))
+                      #:sources (ss (ssl-default-verify-sources)))
   (define err (current-error-port))
   (define out (current-output-port))
-  (let/cc cc
-    (let loop ()
-      (define (continue) (cc (loop)))
-      (call-with-values
-       (lambda ()
-         (sync listen-evt))
-       (lambda (in out)
-         ; Check the other end of the connection.
-         (define ad (call-with-values (lambda () (tcp-addresses in))
-                                      (lambda (_ a) (make-ip-address a))))
-         (if (and (or (not as) (network-set-member as ad))
-                  (or (not rs) (not (network-set-member rs ad))))
-             (void)
-             (begin
-               (close-input-port in)
-               (close-output-port out)
-               (displayln (format "~a: A connection from ~a is rejected." name (ip-address->string ad)))
-               (continue)))
-         (define thd (thread
-                      (lambda ()
-                        (with-handlers ((exn:fail?
-                                         (lambda (e)
-                                           (displayln (format "~a: ~a" name (exn->string e)) err))))
-                          (parameterize ((ssl-default-verify-sources ss))
-                            (start-client passwd
-                                          proxy-address proxy-port
-                                          dst-address dst-port
-                                          in out)
-                            (displayln (format "~a: A trojan tunnel is closed." name) out))))))
-         (loop))))))
+  (let loop ()
+    (call-with-values
+     (lambda ()
+       (sync listen-evt))
+     (lambda (in out)
+       (define thd (thread
+                    (lambda ()
+                      (with-handlers ((exn:fail?
+                                       (lambda (e)
+                                         (displayln (format "~a: ~a" name (exn->string e)) err))))
+                        (parameterize ((ssl-default-verify-sources ss))
+                          (start-client passwd
+                                        proxy-address proxy-port
+                                        dst-address dst-port
+                                        in out)
+                          (displayln (format "~a: A trojan tunnel is closed." name) out))))))
+       (loop)))))
 
 (module+ test
   ;; Any code in this `test` submodule runs when this file is run using DrRacket
@@ -95,7 +80,8 @@
   ;; http://docs.racket-lang.org/guide/Module_Syntax.html#%28part._main-and-test%29
 
   (require racket/cmdline racket/contract racket/system racket/file racket/pretty
-           raco/command-name)
+           raco/command-name
+           "evt.rkt")
   (define certs (box (ssl-default-verify-sources)))
   (define config (box #f))
   (command-line
@@ -153,21 +139,30 @@
                (lambda (t)
                  (match t
                    ((tunnel-pattern name dest-address dest-port local-address local-port allow block)
+                    (define tunnel-config-table
+                      (hash
+                       '#:name name
+                       '#:local-address local-address
+                       '#:local-port local-port
+                       '#:dest-address dest-address
+                       '#:dest-port dest-port
+                       '#:allow-address? (let ((allow-network-set (and allow (pairs->network-set allow)))
+                                               (block-network-set (and block (pairs->network-set block))))
+                                           (lambda (addr)
+                                             (and
+                                              (or (not allow-network-set)
+                                                  (network-set-member allow-network-set addr))
+                                              (or (not block-network-set)
+                                                  (network-set-member block-network-set addr)))))))
                     (void (thread
                            (lambda ()
-                             (define l (tcp-listen local-port 4 #f local-address))
-                             (displayln (format "~a ~a:~a" name local-address local-port) out)
-                             (dynamic-wind
-                               void
-                               (lambda ()
-                                 (start-tunnel name password
-                                               remote-address remote-port
-                                               dest-address dest-port
-                                               (handle-evt l tcp-accept)
-                                               #:sources cert-list
-                                               #:allow-network-set (and allow (pairs->network-set allow))
-                                               #:reject-network-set (and block (pairs->network-set block))))
-                               (lambda () (tcp-close l)))))))))
+                             (start-tunnel name password
+                                           remote-address remote-port
+                                           dest-address dest-port
+                                           (make-tcp-evt tunnel-config-table)
+                                           #:sources cert-list
+                                           ))))
+                    (displayln (format "~a ~a:~a" name local-address local-port) out))))
                  tunnels)
               (let loop ()
                 (sync (handle-evt
