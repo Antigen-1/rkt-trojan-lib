@@ -72,6 +72,7 @@
        (write-bytes #"\r\n" out)
        (write-bytes bstr out))
 
+     ;; Receive from the proxy server
      (define (make-recv-ports source-address source-port)
        (define n:out
          (make-output-port
@@ -82,7 +83,12 @@
                  udp-send-to/enable-break
                  udp-send-to)
              u source-address source-port bstr start end)
-            (- end start))))
+            (- end start))
+          (lambda ()
+            (call-with-semaphore
+             ht-sema
+             (lambda ()
+               (hash-remove! ht (list source-address source-port)))))))
        (values (open-input-nowhere) n:out))
 
      (define ports-channel (make-channel))

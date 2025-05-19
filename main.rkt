@@ -160,7 +160,10 @@
                              (start-tunnel name (string->symbol mode) password
                                            remote-address remote-port
                                            dest-address dest-port
-                                           (make-tcp-evt tunnel-config-table)
+                                           ((case mode
+                                              (("connect") make-tcp-evt)
+                                              (("udp-associate") make-udp-evt))
+                                            tunnel-config-table)
                                            #:sources cert-list
                                            ))))
                     (displayln (format "~a ~a:~a" name local-address local-port) out))))
