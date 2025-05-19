@@ -11,10 +11,10 @@
 
 (define (make-tcp-evt kwargs)
   (match kwargs
-    ((hash #:name name
-           #:local-address local-address
-           #:local-port local-port
-           #:allow-address? allow-address?
+    ((hash '#:name name
+           '#:local-address local-address
+           '#:local-port local-port
+           '#:allow-address? allow-address?
            #:open)
      (define l (tcp-listen local-port 4 #f local-address))
      (define evt
@@ -35,12 +35,12 @@
 
 (define (make-udp-evt kwargs)
   (match kwargs
-    ((hash #:name name
-           #:local-address local-address
-           #:local-port local-port
-           #:dest-address dest-address
-           #:dest-port dest-port
-           #:allow-address? allow-address?
+    ((hash '#:name name
+           '#:local-address local-address
+           '#:local-port local-port
+           '#:dest-address dest-address
+           '#:dest-port dest-port
+           '#:allow-address? allow-address?
            #:open)
      #; (hash/c (list/c string? port-number?) (list input-port? output-port?))
      (define ht (make-hash))
