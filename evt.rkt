@@ -42,7 +42,8 @@
            '#:dest-port dest-port
            '#:allow-address? allow-address?
            #:open)
-     #; (hash/c (list/c string? port-number?) (list input-port? output-port?))
+     ;; A hash table used to dispatch datagrams received locally
+     #; (hash/c (list/c string? port-number?) output-port?)
      (define ht (make-hash))
      (define ht-sema (make-semaphore 1))
 
@@ -91,7 +92,7 @@
 
      ;; Receive from the proxy server
      ;; There is also a header in each received packet
-     (define (make-recv-ports source-address source-port)
+     (define (make-recv-port source-address source-port)
        (define-values (recv-in recv-out) (make-pipe))
        (define thd
          (thread
@@ -106,6 +107,11 @@
                      (displayln (format "~a: UDP packet parsing error(atype ~s)." name atype)
                                 err)
                      (cc))))
+                (if (eof-object? bstr)
+                    (begin
+                      (displayln (format "~a: A tunnel is closed by peer" name) err)
+                      (cc))
+                    (void))
                 (if (= 0 (bytes-length bstr))
                     (void)
                     (udp-send-to u source-address source-port bstr))
@@ -117,15 +123,16 @@
           recv-out
           (lambda ()
             ;; Clean all objects
-            (kill-thread thd)
+            (close-output-port recv-out)
             (call-with-semaphore
              ht-sema
              (lambda ()
-               (match-define (list _ send-out)
-                 (hash-ref ht (list source-address source-port)))
-               (close-output-port send-out)
+               (define send-out
+                 (hash-ref ht (list source-address source-port)
+                           #f))
+               (cond (send-out => close-output-port))
                (hash-remove! ht (list source-address source-port)))))))
-       (values (open-input-nowhere) n:out))
+       n:out)
 
      (define ports-channel (make-channel))
      (void (thread
@@ -146,20 +153,20 @@
                                            (call-with-semaphore
                                             ht-sema
                                             (lambda ()
-                                              (match-define (list _ send-out)
+                                              (define send-out
                                                 (hash-ref ht
                                                           (list source-address source-port)
-                                                          (list #f #f)))
+                                                          #f))
                                               (cond (send-out
                                                      (write-packet send-buf send-out 0 num))
                                                     (else (define-values (send-in send-out)
                                                             (make-pipe))
-                                                          (define-values (recv-in recv-out)
-                                                            (make-recv-ports source-address source-port))
+                                                          (define recv-out
+                                                            (make-recv-port source-address source-port))
                                                           (write-packet send-buf send-out 0 num)
                                                           (hash-set! ht
                                                                      (list source-address source-port)
-                                                                     (list recv-in send-out))
+                                                                     send-out)
                                                           (channel-put ports-channel
                                                                        (list send-in recv-out))))))))))))))
                 (loop)))))
