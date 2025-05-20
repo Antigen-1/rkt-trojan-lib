@@ -74,7 +74,7 @@
        (write-byte (bitwise-and len 255) out)
        (write-bytes #"\r\n" out)
        (write-bytes bstr out start end))
-     (define (parse-packet in fallback)
+     (define (parse-non-empty-packet in atype-fallback len-bstr-fallback len-fallback eof-fallback)
        (define atype (read-byte in))
        (case atype
          ((3)
@@ -83,12 +83,20 @@
           (read-bytes 4 in))
          ((4)
           (read-bytes 16 in))
-         (else (fallback atype)))
+         (else (atype-fallback atype)))
        (read-bytes 2 in)
-       (define len (+ (arithmetic-shift (read-byte in) 8)
-                      (read-byte in)))
-       (read-bytes-line in 'return-linefeed)
-       (read-bytes len in))
+       (define len-bstr (read-bytes-line in 'return-linefeed))
+       (cond ((not (= (bytes-length len-bstr) 2))
+              (len-bstr-fallback len-bstr)))
+       (define len (bitwise-ior (arithmetic-shift (bytes-ref len-bstr 0) 8)
+                                (bytes-ref len-bstr 1)))
+       (define r (read-bytes len in))
+       (cond ((eof-object? r) (eof-fallback))
+             ((= len (bytes-length r))
+              (cond ((= len 0)
+                     (parse-non-empty-packet in atype-fallback len-bstr-fallback len-fallback eof-fallback))
+                    (else r)))
+             (else (len-fallback len r))))
 
      ;; Receive from the proxy server
      ;; There is also a header in each received packet
@@ -100,21 +108,32 @@
             (let/cc cc
               (let loop ()
                 (define bstr
-                  (parse-packet
+                  (parse-non-empty-packet
                    recv-in
+                   ;; ATYPE
                    (lambda (atype)
                      (close-output-port n:out)
                      (displayln (format "~a: UDP packet parsing error(atype ~s)." name atype)
                                 err)
+                     (cc))
+                   ;; len bytes
+                   (lambda (bstr)
+                     (close-output-port n:out)
+                     (displayln (format "~a: UDP packet parsing error(length bytes ~s)." name bstr)
+                                err)
+                     (cc))
+                   ;; len
+                   (lambda (len bstr)
+                     (close-output-port n:out)
+                     (displayln (format "~a: UDP packet parsing error(length ~s; data ~s)." name len bstr)
+                                err)
+                     (cc))
+                   ;; EOF
+                   (lambda ()
+                     ;; n:out has already been closed
+                     (displayln (format "~a: A tunnel is closed by peer" name) err)
                      (cc))))
-                (if (eof-object? bstr)
-                    (begin
-                      (displayln (format "~a: A tunnel is closed by peer" name) err)
-                      (cc))
-                    (void))
-                (if (= 0 (bytes-length bstr))
-                    (void)
-                    (udp-send-to u source-address source-port bstr))
+                (udp-send-to u source-address source-port bstr)
                 (loop))))))
        (define n:out
          (make-output-port
