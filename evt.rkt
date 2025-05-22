@@ -17,7 +17,7 @@
            '#:allow-address? allow-address?
            #:open)
      (define l (tcp-listen local-port 4 #f local-address))
-     (define out (current-output-port))
+     (define stdout (current-output-port))
      (define evt
        (replace-evt
         l
@@ -27,12 +27,14 @@
                         ((ip) (make-ip-address ad)))
             (if (or (not allow-address?) (allow-address? ip))
                 (begin
-                  (displayln (format "~a: A connection from ~a is accepted." name (ip-address->string ip)) out)
+                  (displayln (format "~a: A connection from ~a is accepted." name (ip-address->string ip))
+                             stdout)
                   (handle-evt always-evt (lambda (_) (values in out))))
                 (begin
                   (close-input-port in)
                   (close-output-port out)
-                  (displayln (format "~a: A connection from ~a is rejected." name (ip-address->string ip)) out)
+                  (displayln (format "~a: A connection from ~a is rejected." name (ip-address->string ip))
+                             stdout)
                   evt))))))
      evt)))
 
