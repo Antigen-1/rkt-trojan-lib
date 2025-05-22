@@ -1,5 +1,5 @@
 #lang racket/base
-(require racket/match racket/tcp racket/contract racket/udp racket/port racket/exn
+(require racket/match racket/tcp racket/contract racket/udp
          net/ip net/cookies/common)
 (provide (contract-out
           (make-tcp-evt evt-maker/c)
@@ -17,6 +17,7 @@
            '#:allow-address? allow-address?
            #:open)
      (define l (tcp-listen local-port 4 #f local-address))
+     (define out (current-output-port))
      (define evt
        (replace-evt
         l
@@ -25,11 +26,13 @@
                         ((_ ad) (tcp-addresses in))
                         ((ip) (make-ip-address ad)))
             (if (or (not allow-address?) (allow-address? ip))
-                (handle-evt always-evt (lambda (_) (values in out)))
+                (begin
+                  (displayln (format "~a: A connection from ~a is accepted." name (ip-address->string ip)) out)
+                  (handle-evt always-evt (lambda (_) (values in out))))
                 (begin
                   (close-input-port in)
                   (close-output-port out)
-                  (displayln (format "~a: A connection from ~a is rejected." name (ip-address->string ip)))
+                  (displayln (format "~a: A connection from ~a is rejected." name (ip-address->string ip)) out)
                   evt))))))
      evt)))
 
@@ -48,6 +51,7 @@
      (define ht-sema (make-semaphore 1))
 
      (define err (current-error-port))
+     (define out (current-output-port))
 
      (define u (udp-open-socket local-address local-port))
      (udp-bind! u local-address local-port)
@@ -141,53 +145,60 @@
           always-evt
           recv-out
           (lambda ()
-            ;; Clean all objects
-            (close-output-port recv-out)
+            (if (equal? (current-thread) thd)
+                (void)
+                (kill-thread thd)))))
+       n:out)
+     (define (make-send-ports source-address source-port)
+       (define-values (in out) (make-pipe))
+       (define n:in
+         (make-input-port
+          (format "~a/send-in" name)
+          in
+          in
+          (lambda ()
             (call-with-semaphore
              ht-sema
              (lambda ()
-               (define send-out
-                 (hash-ref ht (list source-address source-port)
-                           #f))
-               (cond (send-out => close-output-port))
                (hash-remove! ht (list source-address source-port)))))))
-       n:out)
+       (values n:in out))
 
      (define ports-channel (make-channel))
      (void (thread
             (lambda ()
               (define send-buf (make-bytes 1024))
               (let loop ()
-                (with-handlers ((exn:fail?
-                                 (lambda (e)
-                                   (displayln (format "~a: ~a" name (exn->string e))
-                                              err))))
-                  (sync
-                   ;; Send to the proxy server
-                   (handle-evt (udp-receive!-evt u send-buf)
-                               (lambda (l)
-                                 (match l
-                                   ((list num source-address source-port)
-                                    (cond ((allow-address? (make-ip-address source-address))
-                                           (call-with-semaphore
-                                            ht-sema
-                                            (lambda ()
-                                              (define send-out
-                                                (hash-ref ht
-                                                          (list source-address source-port)
-                                                          #f))
-                                              (cond (send-out
-                                                     (write-packet send-buf send-out 0 num))
-                                                    (else (define-values (send-in send-out)
-                                                            (make-pipe))
-                                                          (define recv-out
-                                                            (make-recv-port source-address source-port))
-                                                          (write-packet send-buf send-out 0 num)
-                                                          (hash-set! ht
-                                                                     (list source-address source-port)
-                                                                     send-out)
-                                                          (channel-put ports-channel
-                                                                       (list send-in recv-out))))))))))))))
+                (sync
+                 ;; Send to the proxy server
+                 (handle-evt (udp-receive!-evt u send-buf)
+                             (lambda (l)
+                               (match l
+                                 ((list num source-address source-port)
+                                  (cond ((allow-address? (make-ip-address source-address))
+                                         (call-with-semaphore
+                                          ht-sema
+                                          (lambda ()
+                                            (define send-out
+                                              (hash-ref ht
+                                                        (list source-address source-port)
+                                                        #f))
+                                            (cond (send-out
+                                                   (write-packet send-buf send-out 0 num))
+                                                  (else (displayln (format "~a: udp://~a:~a -> udp://~a:~a"
+                                                                           name
+                                                                           source-address source-port
+                                                                           dest-address dest-port)
+                                                                   out)
+                                                        (define-values (send-in send-out)
+                                                          (make-send-ports source-address source-port))
+                                                        (define recv-out
+                                                          (make-recv-port source-address source-port))
+                                                        (write-packet send-buf send-out 0 num)
+                                                        (hash-set! ht
+                                                                   (list source-address source-port)
+                                                                   send-out)
+                                                        (channel-put ports-channel
+                                                                     (list send-in recv-out)))))))))))))
                 (loop)))))
 
      (handle-evt
