@@ -1,9 +1,12 @@
 #lang racket/base
 (require racket/match racket/tcp racket/contract racket/udp
+         openssl
          net/ip net/cookies/common)
 (provide (contract-out
           (make-tcp-evt evt-maker/c)
-          (make-udp-evt evt-maker/c)))
+          (make-udp-evt evt-maker/c)
+          (make-ssl-evt evt-maker/c))
+         evt-maker/c)
 
 (define evt-maker/c
   (-> (hash/c keyword? any/c)
@@ -24,6 +27,39 @@
         (lambda (l)
           (let*-values (((in out) (tcp-accept l))
                         ((_ ad) (tcp-addresses in))
+                        ((ip) (make-ip-address ad)))
+            (if (or (not allow-address?) (allow-address? ip))
+                (begin
+                  (displayln (format "~a: A connection from ~a is accepted." name (ip-address->string ip))
+                             stdout)
+                  (handle-evt always-evt (lambda (_) (values in out))))
+                (begin
+                  (close-input-port in)
+                  (close-output-port out)
+                  (displayln (format "~a: A connection from ~a is rejected." name (ip-address->string ip))
+                             stdout)
+                  evt))))))
+     evt)))
+
+(define (make-ssl-evt kwargs)
+  (match kwargs
+    ((hash '#:name name
+           '#:local-address local-address
+           '#:local-port local-port
+           '#:allow-address? allow-address?
+           '#:cert cert 
+           '#:private private
+           #:open)
+     (define listener (ssl-listen local-port 5 #f local-address 'secure))
+     (if cert (ssl-load-certificate-chain! listener cert) (void))
+     (if private (ssl-load-private-key! listener private) (void))
+     (define stdout (current-output-port))
+     (define evt
+       (replace-evt
+        listener
+        (lambda (listener)
+          (let*-values (((in out) (ssl-accept listener))
+                        ((_ ad) (ssl-addresses in))
                         ((ip) (make-ip-address ad)))
             (if (or (not allow-address?) (allow-address? ip))
                 (begin

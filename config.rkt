@@ -18,6 +18,14 @@
                 ("local-port" . 8080)
                 ("allow" . (("127.0.0.0" "255.0.0.0")))
                 ("block" . #f))))))
+(define default-server-config
+  #hash(("password" . "abcdefg")
+        ("proxy-address" . "127.0.0.1")
+        ("proxy-port" . 9000)
+        ("allow" . (("127.0.0.0" "255.0.0.0")))
+        ("block" . #f)
+        ("cert" . #f)
+        ("private" . #f)))
 
 (define-match-expander config-pattern
   (lambda (stx)
@@ -41,6 +49,18 @@
                "allow" (or (and #f allow-network) (? list? allow-network))
                "block" (or (and #f block-network) (? list? block-network))
                #:closed)])))
+(define-match-expander server-config-pattern
+  (lambda (stx)
+    (syntax-case stx ()
+      [(_ password address port allow-network block-network cert private)
+       #'(hash "password" (? string? password)
+               "proxy-address" (? string? address)
+               "proxy-port" (? port-number? port)
+               "allow" (or (and #f allow-network) (? list? allow-network))
+               "block" (or (and #f block-network) (? list? block-network))
+               "cert" (and (or #f (? path-string?)) cert)
+               "private" (and (or #f (? path-string?)) private)
+               #:closed)])))
 (define-match-expander network-pattern
   (lambda (stx)
     (syntax-case stx ()
@@ -51,6 +71,8 @@
   (require rackunit)
   (check-match default-config
                (config-pattern _ _ _ _))
+  (check-match default-server-config
+               (server-config-pattern _ _ _ _ _ _ _))
   (match default-config
     ((config-pattern p ra rp ts)
      (for-each (lambda (t)
@@ -61,4 +83,9 @@
                               (append (if an an null)
                                       (if bn bn null))))))
                ts)))
+  (match default-server-config
+    ((server-config-pattern p "127.0.0.1" 9000 a #f #f #f)
+     (for-each (lambda (n)
+                 (check-match n (network-pattern ip mask)))
+               a)))
   )

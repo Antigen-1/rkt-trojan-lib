@@ -1,5 +1,5 @@
 #lang racket/base
-(require "data.rkt" "crypto.rkt" racket/match racket/port racket/contract net/ip)
+(require "data.rkt" file/sha1 racket/match racket/port racket/contract net/ip)
 (provide (contract-out (client-data->input-port (-> client-data? any))))
 
 (define (render-request req)
@@ -46,7 +46,7 @@
     ((struct client-data (passwd request payload))
      (input-port-append
       #f
-      (open-input-string (SHA224 passwd))
+      (open-input-string (bytes->hex-string (sha224-bytes (open-input-string passwd))))
       (open-input-bytes #"\r\n")
       (open-input-bytes (render-request request))
       (open-input-bytes #"\r\n")

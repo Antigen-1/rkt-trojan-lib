@@ -27,7 +27,7 @@
 
 (require racket/tcp racket/exn racket/match
          openssl
-         "client.rkt" "config.rkt"
+         "client.rkt" "server.rkt" "config.rkt"
          net/ip)
 
 ;; Utilities for network sets
@@ -46,8 +46,8 @@
 ;; A trojan2tcp converter
 (define (start-tunnel name mode passwd proxy-address proxy-port dst-address dst-port listen-evt
                       #:sources (ss (ssl-default-verify-sources)))
-  (define err (current-error-port))
-  (define out (current-output-port))
+  (define stderr (current-error-port))
+  (define stdout (current-output-port))
   (let loop ()
     (call-with-values
      (lambda ()
@@ -57,14 +57,14 @@
                     (lambda ()
                       (with-handlers ((exn:fail?
                                        (lambda (e)
-                                         (displayln (format "~a: ~a" name (exn->string e)) err))))
+                                         (displayln (format "~a: ~a" name (exn->string e)) stderr))))
                         (parameterize ((ssl-default-verify-sources ss))
                           (start-client mode
                                         passwd
                                         proxy-address proxy-port
                                         dst-address dst-port
                                         in out)
-                          (displayln (format "~a: A trojan tunnel is closed." name) out))))))
+                          (displayln (format "~a: A trojan tunnel is closed." name) stdout))))))
        (loop)))))
 
 (module+ test
@@ -90,7 +90,7 @@
    #:once-each
    [("--config")
     c
-    "Read this configuration file if the `start` command is used, or generate a new configuration file if the `new-config` command is used."
+    "Read this configuration file when `start` is run, or generate a new configuration file when `new-config` or `new-server-config` is run."
     (set-box! config c)]
     #:multi
     [("--cert-dir") c
@@ -117,6 +117,12 @@
          (lambda (out)
            (pretty-write default-config out))
          #:exists 'error))
+      (("new-server-config")
+       (call-with-output-file
+         config-path
+         (lambda (out)
+           (pretty-write default-server-config out))
+         #:exists 'error))
       (("start")
        (define/contract cert-list
          (let ([source/c (or/c path-string?
@@ -127,14 +133,50 @@
          (unbox certs))
        (define config-value
          (file->value config-path))
-       (match config-value
-         ((config-pattern password remote-address remote-port tunnels)
-          (define cust (make-custodian (current-custodian)))
-          (define out (current-output-port))
-          (with-handlers ((exn:break? (lambda (_) (custodian-shutdown-all cust)))
-                          (exn:fail? (lambda (e)
-                                       (custodian-shutdown-all cust)
-                                       (raise e))))
+       (define out (current-output-port))
+       (define err (current-error-port))
+       (define cust (make-custodian (current-custodian)))
+       (with-handlers ((exn:break? (lambda (_) (custodian-shutdown-all cust)))
+                       (exn:fail? (lambda (e)
+                                    (custodian-shutdown-all cust)
+                                    (raise e))))
+        (match config-value
+          ((server-config-pattern password address port allow block cert private)
+            (parameterize ((current-custodian cust)
+                           (ssl-default-verify-sources cert-list))
+              (let*  ((allow-network-set (and allow (pairs->network-set allow)))
+                      (block-network-set (and block (pairs->network-set block)))
+                      (allow? (lambda (addr)
+                               (and
+                                (or (not allow-network-set)
+                                    (network-set-member allow-network-set addr))
+                                (or (not block-network-set)
+                                    (not (network-set-member block-network-set addr)))))))
+                (define evt (make-ssl-evt 
+                              (hasheq '#:name 'server
+                                      '#:local-address address
+                                      '#:local-port port
+                                      '#:allow-address? allow?
+                                      '#:cert cert 
+                                      '#:private private)))
+                (displayln (format "Server: listen to port ~a" port) out)
+                (define thd
+                  (thread
+                    (lambda ()
+                      (with-handlers ((exn:fail?
+                                       (lambda (e)
+                                         (displayln (format "~a: ~a" 'Server (exn->string e)) err))))
+                        (let loop ()
+                          (define-values (tcp-in tcp-out) (sync evt))
+                          (void (thread (lambda () (start-server password tcp-in tcp-out) (displayln (format "~a: A trojan tunnel is closed." 'Server) out))))
+                          (loop))))))
+                (let loop ()
+                  (sync (handle-evt
+                         (alarm-evt (+ (current-milliseconds) 5000))
+                         (lambda (_)
+                           (collect-garbage 'incremental)
+                           (loop))))))))
+          ((config-pattern password remote-address remote-port tunnels)
             (parameterize ((current-custodian cust))
               (for-each
                (lambda (t)
@@ -155,7 +197,8 @@
                                                   (network-set-member allow-network-set addr))
                                               (or (not block-network-set)
                                                   (not (network-set-member block-network-set addr))))))))
-                    (void (thread
+                    (define thd 
+                      (thread
                            (lambda ()
                              (start-tunnel name (string->symbol mode) password
                                            remote-address remote-port
@@ -173,6 +216,4 @@
                        (alarm-evt (+ (current-milliseconds) 5000))
                        (lambda (_)
                          (collect-garbage 'incremental)
-                         (loop)))))
-              ))))))
-  ))
+                         (loop)))))))))))))
