@@ -44,8 +44,7 @@
        #t))
 
 ;; A trojan2tcp converter
-(define (start-tunnel name mode passwd proxy-address proxy-port dst-address dst-port listen-evt
-                      #:sources (ss (ssl-default-verify-sources)))
+(define (start-tunnel name mode passwd proxy-address proxy-port dst-address dst-port listen-evt pool)
   (define stderr (current-error-port))
   (define stdout (current-output-port))
   (let loop ()
@@ -54,17 +53,17 @@
        (sync listen-evt))
      (lambda (in out)
        (define thd (thread
+                    #:pool pool
                     (lambda ()
                       (with-handlers ((exn:fail?
                                        (lambda (e)
                                          (displayln (format "~a: ~a" name (exn->string e)) stderr))))
-                        (parameterize ((ssl-default-verify-sources ss))
-                          (start-client mode
-                                        passwd
-                                        proxy-address proxy-port
-                                        dst-address dst-port
-                                        in out)
-                          (displayln (format "~a: A trojan tunnel is closed." name) stdout))))))
+                        (start-client mode
+                                      passwd
+                                      proxy-address proxy-port
+                                      dst-address dst-port
+                                      in out)
+                        (displayln (format "~a: A trojan tunnel is closed." name) stdout)))))
        (loop)))))
 
 (module+ test
@@ -140,11 +139,12 @@
                        (exn:fail? (lambda (e)
                                     (custodian-shutdown-all cust)
                                     (raise e))))
-        (match config-value
-          ((server-config-pattern password address port allow block cert private)
-            (parameterize ((current-custodian cust)
-                           (ssl-default-verify-sources cert-list))
-              (let*  ((allow-network-set (and allow (pairs->network-set allow)))
+          (parameterize ((current-custodian cust)
+                         (ssl-default-verify-sources cert-list))
+            (define pool (make-parallel-thread-pool))
+            (match config-value
+              ((server-config-pattern password address port allow block cert private)
+               (let* ((allow-network-set (and allow (pairs->network-set allow)))
                       (block-network-set (and block (pairs->network-set block)))
                       (allow? (lambda (addr)
                                (and
@@ -168,16 +168,15 @@
                                          (displayln (format "~a: ~a" 'Server (exn->string e)) err))))
                         (let loop ()
                           (define-values (tcp-in tcp-out) (sync evt))
-                          (void (thread (lambda () (start-server password tcp-in tcp-out) (displayln (format "~a: A trojan tunnel is closed." 'Server) out))))
+                          (void (thread #:pool pool (lambda () (start-server password tcp-in tcp-out) (displayln (format "~a: A trojan tunnel is closed." 'Server) out))))
                           (loop))))))
                 (let loop ()
                   (sync (handle-evt
                          (alarm-evt (+ (current-milliseconds) 5000))
                          (lambda (_)
                            (collect-garbage 'incremental)
-                           (loop))))))))
-          ((config-pattern password remote-address remote-port tunnels)
-            (parameterize ((current-custodian cust))
+                           (loop)))))))
+            ((config-pattern password remote-address remote-port tunnels)
               (for-each
                (lambda (t)
                  (match t
@@ -207,8 +206,7 @@
                                               (("connect") make-tcp-evt)
                                               (("udp-associate") make-udp-evt))
                                             tunnel-config-table)
-                                           #:sources cert-list
-                                           ))))
+                                           pool))))
                     (displayln (format "~a ~a:~a ~a" name local-address local-port mode) out))))
                  tunnels)
               (let loop ()

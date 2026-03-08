@@ -21,10 +21,8 @@
                             ((6) 'ipv6))
                           as))))
     (define exn-ch (make-channel))
-    (define parallel-pool (make-parallel-thread-pool 2))
     (define send-thd
       (thread
-       #:pool parallel-pool
        (lambda ()
          (with-handlers ((exn:fail? (lambda (e) (channel-put exn-ch e))))
            (dynamic-wind
@@ -47,15 +45,13 @@
                       (copy-port in output))
                     (lambda ()
                       (close-input-port in)
-                      (close-output-port output)))))
-        #:pool parallel-pool))
+                      (close-output-port output)))))))
     (let loop ((pool (list recv-thd send-thd)))
       (if (null? pool)
-          (parallel-thread-pool-close parallel-pool)
+          (void)
           (let ()
             (define r (apply sync exn-ch pool))
             (cond ((exn? r) 
                    (map kill-thread pool) 
-                   (parallel-thread-pool-close parallel-pool)
                    (raise r))
                   (else (loop (remove r pool)))))))))

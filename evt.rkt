@@ -50,7 +50,7 @@
            '#:cert cert 
            '#:private private
            #:open)
-     (define listener (ssl-listen local-port 5 #f local-address 'secure))
+     (define listener (ssl-listen local-port 5 #f local-address 'auto))
      (if cert (ssl-load-certificate-chain! listener cert) (void))
      (if private (ssl-load-private-key! listener private) (void))
      (define stdout (current-output-port))

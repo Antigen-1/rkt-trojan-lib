@@ -14,10 +14,8 @@
       ((server-data hash (request cmd dst-type dst port) payload)
        (define-values (in out) (tcp-connect (if (ip-address? dst) (ip-address->string dst) dst) port))
        (define exn-ch (make-channel))
-       (define parallel-pool (make-parallel-thread-pool 2))
        (define send-thd
         (thread
-          #:pool parallel-pool
           (lambda ()
             (with-handlers ((exn:fail? (lambda (e) (channel-put exn-ch e))))
               (dynamic-wind
@@ -36,15 +34,13 @@
                         (copy-port input out))
                       (lambda ()
                         (close-input-port input)
-                        (close-output-port out)))))
-          #:pool parallel-pool))
+                        (close-output-port out)))))))
       (let loop ((pool (list recv-thd send-thd)))
         (if (null? pool)
-            (parallel-thread-pool-close parallel-pool)
+            (void)
             (let ()
               (define r (apply sync exn-ch pool))
               (cond ((exn? r) 
                      (map kill-thread pool) 
-                     (parallel-thread-pool-close parallel-pool)
                      (raise r))
                     (else (loop (remove r pool)))))))))))
