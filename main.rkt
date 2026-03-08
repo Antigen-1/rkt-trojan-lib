@@ -44,7 +44,7 @@
        #t))
 
 ;; A trojan2tcp converter
-(define (start-tunnel name mode passwd proxy-address proxy-port dst-address dst-port listen-evt pool)
+(define (start-tunnel name mode passwd proxy-address proxy-port dst-address dst-port listen-evt group)
   (define stderr (current-error-port))
   (define stdout (current-output-port))
   (let loop ()
@@ -52,19 +52,20 @@
      (lambda ()
        (sync listen-evt))
      (lambda (in out)
-       (define thd (thread
-                    #:pool pool
-                    (lambda ()
-                      (with-handlers ((exn:fail?
-                                       (lambda (e)
-                                         (displayln (format "~a: ~a" name (exn->string e)) stderr))))
-                        (start-client mode
-                                      passwd
-                                      proxy-address proxy-port
-                                      dst-address dst-port
-                                      in out)
-                        (displayln (format "~a: A trojan tunnel is closed." name) stdout)))))
-       (loop)))))
+       (parameterize ((current-thread-group group))
+        (define thd 
+            (thread
+              (lambda ()
+                (with-handlers ((exn:fail?
+                                  (lambda (e)
+                                   (displayln (format "~a: ~a" name (exn->string e)) stderr))))
+                  (start-client mode
+                                passwd
+                                proxy-address proxy-port
+                                dst-address dst-port
+                                in out)
+                  (displayln (format "~a: A trojan tunnel is closed." name) stdout)))))
+        (loop))))))
 
 (module+ test
   ;; Any code in this `test` submodule runs when this file is run using DrRacket
@@ -139,9 +140,11 @@
                        (exn:fail? (lambda (e)
                                     (custodian-shutdown-all cust)
                                     (raise e))))
+          (define dispatch-group (parameterize ((current-custodian cust)) (make-thread-group)))
+          (define tunnel-group (parameterize ((current-custodian cust)) (make-thread-group)))
           (parameterize ((current-custodian cust)
+                         (current-thread-group dispatch-group)
                          (ssl-default-verify-sources cert-list))
-            (define pool (make-parallel-thread-pool))
             (match config-value
               ((server-config-pattern password address port allow block cert private)
                (let* ((allow-network-set (and allow (pairs->network-set allow)))
@@ -168,7 +171,8 @@
                                          (displayln (format "~a: ~a" 'Server (exn->string e)) err))))
                         (let loop ()
                           (define-values (tcp-in tcp-out) (sync evt))
-                          (void (thread #:pool pool (lambda () (start-server password tcp-in tcp-out) (displayln (format "~a: A trojan tunnel is closed." 'Server) out))))
+                          (parameterize ((current-thread-group tunnel-group))
+                            (thread (lambda () (start-server password tcp-in tcp-out) (displayln (format "~a: A trojan tunnel is closed." 'Server) out))))
                           (loop))))))
                 (let loop ()
                   (sync (handle-evt
@@ -206,7 +210,7 @@
                                               (("connect") make-tcp-evt)
                                               (("udp-associate") make-udp-evt))
                                             tunnel-config-table)
-                                           pool))))
+                                           tunnel-group))))
                     (displayln (format "~a ~a:~a ~a" name local-address local-port mode) out))))
                  tunnels)
               (let loop ()
