@@ -73,7 +73,7 @@
                    (lambda (e)
                       (displayln (format "~a: ~a" 'Server (exn->string e)) stderr))))
     (let loop ()
-      (define-values (ssl-in ssl-out) (sync evt))
+      (define-values (ssl-in ssl-out) (sync listen-evt))
       (parameterize ((current-thread-group group))
         (thread (lambda () (start-server password ssl-in ssl-out) (displayln (format "~a: A trojan tunnel is closed." 'Server) stdout))))
       (loop))))
