@@ -43,8 +43,8 @@
               nets)
        #t))
 
-;; A trojan2tcp converter
-(define (start-tunnel name mode passwd proxy-address proxy-port dst-address dst-port listen-evt group)
+;; Tunnel launchers
+(define (client:start-tunnel name mode passwd proxy-address proxy-port dst-address dst-port listen-evt group)
   (define stderr (current-error-port))
   (define stdout (current-output-port))
   (let loop ()
@@ -66,6 +66,17 @@
                                 in out)
                   (displayln (format "~a: A trojan tunnel is closed." name) stdout)))))
         (loop))))))
+(define (server:start-tunnel passwd proxy-address proxy-port listen-evt group)
+  (define stderr (current-error-port))
+  (define stdout (current-output-port))
+  (with-handlers ((exn:fail?
+                   (lambda (e)
+                      (displayln (format "~a: ~a" 'Server (exn->string e)) stderr))))
+    (let loop ()
+      (define-values (ssl-in ssl-out) (sync evt))
+      (parameterize ((current-thread-group group))
+        (thread (lambda () (start-server password ssl-in ssl-out) (displayln (format "~a: A trojan tunnel is closed." 'Server) stdout))))
+      (loop))))
 
 (module+ test
   ;; Any code in this `test` submodule runs when this file is run using DrRacket
@@ -134,7 +145,6 @@
        (define config-value
          (file->value config-path))
        (define out (current-output-port))
-       (define err (current-error-port))
        (define cust (make-custodian (current-custodian)))
        (with-handlers ((exn:break? (lambda (_) (custodian-shutdown-all cust)))
                        (exn:fail? (lambda (e)
@@ -162,18 +172,11 @@
                                       '#:allow-address? allow?
                                       '#:cert cert 
                                       '#:private private)))
-                (displayln (format "Server: listen to port ~a" port) out)
                 (define thd
                   (thread
                     (lambda ()
-                      (with-handlers ((exn:fail?
-                                       (lambda (e)
-                                         (displayln (format "~a: ~a" 'Server (exn->string e)) err))))
-                        (let loop ()
-                          (define-values (tcp-in tcp-out) (sync evt))
-                          (parameterize ((current-thread-group tunnel-group))
-                            (thread (lambda () (start-server password tcp-in tcp-out) (displayln (format "~a: A trojan tunnel is closed." 'Server) out))))
-                          (loop))))))
+                      (server:start-tunnel password address port evt tunnel-group))))
+                (displayln (format "Server: listen to ~a:~a" address port) out)
                 (let loop ()
                   (sync (handle-evt
                          (alarm-evt (+ (current-milliseconds) 5000))
@@ -203,14 +206,15 @@
                     (define thd 
                       (thread
                            (lambda ()
-                             (start-tunnel name (string->symbol mode) password
-                                           remote-address remote-port
-                                           dest-address dest-port
-                                           ((case mode
-                                              (("connect") make-tcp-evt)
-                                              (("udp-associate") make-udp-evt))
-                                            tunnel-config-table)
-                                           tunnel-group))))
+                             (client:start-tunnel 
+                              name (string->symbol mode) password
+                              remote-address remote-port
+                              dest-address dest-port
+                              ((case mode
+                                (("connect") make-tcp-evt)
+                                (("udp-associate") make-udp-evt))
+                               tunnel-config-table)
+                              tunnel-group))))
                     (displayln (format "~a ~a:~a ~a" name local-address local-port mode) out))))
                  tunnels)
               (let loop ()
