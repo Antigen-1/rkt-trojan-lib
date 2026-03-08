@@ -66,7 +66,7 @@
                                 in out)
                   (displayln (format "~a: A trojan tunnel is closed." name) stdout)))))
         (loop))))))
-(define (server:start-tunnel passwd proxy-address proxy-port listen-evt group)
+(define (server:start-tunnel password proxy-address proxy-port listen-evt group)
   (define stderr (current-error-port))
   (define stdout (current-output-port))
   (with-handlers ((exn:fail?
