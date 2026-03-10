@@ -51,7 +51,10 @@
            '#:private private
            #:open)
      (define listener (tcp-listen local-port 4 #f local-address))
-     (define ctx (ssl-make-server-context 'auto #:certificate-chain cert #:private-key private))
+     (define ctx (ssl-make-server-context 
+                  'auto 
+                  #:certificate-chain cert
+                  #:private-key (list 'pem private)))
      (define stdout (current-output-port))
      (define evt
        (replace-evt
