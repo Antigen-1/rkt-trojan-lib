@@ -68,11 +68,13 @@
         (loop))))))
 (define (server:start-tunnel password proxy-address proxy-port listen-evt group)
   (define stderr (current-error-port))
-  (define stdout (current-output-port))
-  (with-handlers ((exn:fail?
-                   (lambda (e)
-                      (displayln (format "~a: ~a" 'Server (exn->string e)) stderr))))
-    (let loop ()
+  (define stdout (current-output-port))  
+  (let loop ()
+    (with-handlers ((exn:fail?
+                    (lambda (e)
+                      (displayln (format "~a: ~a" 'Server (exn->string e)) stderr)
+                      ;; The server needs to be restarted when `ports->ssl-ports` fails.
+                      (loop))))
       (define-values (ssl-in ssl-out) (sync listen-evt))
       (parameterize ((current-thread-group group))
         (thread (lambda () (start-server password ssl-in ssl-out) (displayln (format "~a: A trojan tunnel is closed." 'Server) stdout))))

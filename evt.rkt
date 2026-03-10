@@ -50,15 +50,22 @@
            '#:cert cert 
            '#:private private
            #:open)
-     (define listener (ssl-listen local-port 5 #f local-address 'auto))
-     (if cert (ssl-load-certificate-chain! listener cert) (void))
-     (if private (ssl-load-private-key! listener private) (void))
+     (define listener (tcp-listen local-port 4 #f local-address))
+     (define ctx (ssl-make-server-context 'auto #:certificate-chain cert #:private-key private))
      (define stdout (current-output-port))
      (define evt
        (replace-evt
         listener
         (lambda (listener)
-          (let*-values (((in out) (ssl-accept listener))
+          (let*-values (((in out) 
+                         (call-with-values
+                          (lambda () (tcp-accept listener))
+                          (lambda (in out)
+                            (ports->ssl-ports 
+                             in out 
+                             #:context ctx
+                             #:close-original? #t 
+                             #:shutdown-on-close? #t))))
                         ((_ ad) (ssl-addresses in))
                         ((ip) (make-ip-address ad)))
             (if (or (not allow-address?) (allow-address? ip))
