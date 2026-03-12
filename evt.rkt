@@ -1,11 +1,9 @@
 #lang racket/base
 (require racket/match racket/tcp racket/contract racket/udp
-         openssl
          net/ip net/cookies/common)
 (provide (contract-out
           (make-tcp-evt evt-maker/c)
-          (make-udp-evt evt-maker/c)
-          (make-ssl-evt evt-maker/c))
+          (make-udp-evt evt-maker/c))
          evt-maker/c)
 
 (define evt-maker/c
@@ -27,50 +25,6 @@
         (lambda (l)
           (let*-values (((in out) (tcp-accept l))
                         ((_ ad) (tcp-addresses in))
-                        ((ip) (make-ip-address ad)))
-            (if (or (not allow-address?) (allow-address? ip))
-                (begin
-                  (displayln (format "~a: A connection from ~a is accepted." name (ip-address->string ip))
-                             stdout)
-                  (handle-evt always-evt (lambda (_) (values in out))))
-                (begin
-                  (close-input-port in)
-                  (close-output-port out)
-                  (displayln (format "~a: A connection from ~a is rejected." name (ip-address->string ip))
-                             stdout)
-                  evt))))))
-     evt)))
-
-(define (make-ssl-evt kwargs)
-  (match kwargs
-    ((hash '#:name name
-           '#:local-address local-address
-           '#:local-port local-port
-           '#:allow-address? allow-address?
-           '#:cert cert 
-           '#:private private
-           #:open)
-     (define listener (tcp-listen local-port 4 #f local-address))
-     (define ctx (ssl-make-server-context 
-                  'auto 
-                  #:certificate-chain cert
-                  #:private-key (list 'pem private)))
-     (define stdout (current-output-port))
-     (define evt
-       (replace-evt
-        listener
-        (lambda (listener)
-          (let*-values (((in out) 
-                         (call-with-values
-                          (lambda () (tcp-accept listener))
-                          (lambda (in out)
-                            (ports->ssl-ports 
-                             in out 
-                             #:mode 'accept
-                             #:context ctx
-                             #:close-original? #t 
-                             #:shutdown-on-close? #t))))
-                        ((_ ad) (ssl-addresses in))
                         ((ip) (make-ip-address ad)))
             (if (or (not allow-address?) (allow-address? ip))
                 (begin

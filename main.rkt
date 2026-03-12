@@ -44,13 +44,16 @@
        #t))
 
 ;; Tunnel launchers
-(define (client:start-tunnel name mode passwd proxy-address proxy-port dst-address dst-port listen-evt group)
+(define (client:start-tunnel name mode passwd proxy-address proxy-port dst-address dst-port config-table group)
+  (define listen-evt ((case mode ((connect) make-tcp-evt) (else make-udp-evt)) config-table))
   (define stderr (current-error-port))
   (define stdout (current-output-port))
   (let loop ()
     (call-with-values
      (lambda ()
-       (sync listen-evt))
+       (let loop ()
+        (with-handlers ((exn:fail? (lambda (e) (displayln (format "~a: ~a" name (exn->string e)) stderr) (loop))))
+          (sync listen-evt))))
      (lambda (in out)
        (parameterize ((current-thread-group group))
         (define thd 
@@ -66,19 +69,27 @@
                                 in out)
                   (displayln (format "~a: A trojan tunnel is closed." name) stdout)))))
         (loop))))))
-(define (server:start-tunnel password proxy-address proxy-port listen-evt group)
+(define (server:start-tunnel password proxy-address proxy-port cert priv config-table group)
+  (define listen-evt (make-tcp-evt config-table))
   (define stderr (current-error-port))
-  (define stdout (current-output-port))  
+  (define stdout (current-output-port)) 
+  (define ctx (ssl-make-server-context 'auto #:private-key (and priv (list 'pem priv)) #:certificate-chain cert))
   (let loop ()
-    (with-handlers ((exn:fail?
-                    (lambda (e)
-                      (displayln (format "~a: ~a" 'Server (exn->string e)) stderr)
-                      ;; The server needs to be restarted when `ports->ssl-ports` fails.
-                      (loop))))
-      (define-values (ssl-in ssl-out) (sync listen-evt))
-      (parameterize ((current-thread-group group))
-        (thread (lambda () (start-server password ssl-in ssl-out) (displayln (format "~a: A trojan tunnel is closed." 'Server) stdout))))
-      (loop))))
+    (call-with-values
+      (lambda ()
+        (let loop ()
+          (with-handlers ((exn:fail? (lambda (e) (displayln (format "Server: ~a" (exn->string e)) stderr) (loop))))
+            (sync listen-evt))))
+      (lambda (tcp-in tcp-out)
+        (parameterize ((current-thread-group group))
+          (thread 
+            (lambda () 
+              (with-handlers ((exn:fail?
+                              (lambda (e)
+                                (displayln (format "Server: ~a" (exn->string e)) stderr))))
+                (define-values (ssl-in ssl-out) (ports->ssl-ports tcp-in tcp-out #:mode 'accept #:close-original? #t #:context ctx))
+                (start-server password ssl-in ssl-out) 
+                (displayln "Server: A trojan tunnel is closed." stdout)))))))))
 
 (module+ test
   ;; Any code in this `test` submodule runs when this file is run using DrRacket
@@ -167,17 +178,15 @@
                                     (network-set-member allow-network-set addr))
                                 (or (not block-network-set)
                                     (not (network-set-member block-network-set addr)))))))
-                (define evt (make-ssl-evt 
-                              (hasheq '#:name 'server
-                                      '#:local-address address
-                                      '#:local-port port
-                                      '#:allow-address? allow?
-                                      '#:cert cert 
-                                      '#:private private)))
+                (define config-table
+                  (hasheq '#:name 'Server
+                          '#:local-address address
+                          '#:local-port port
+                          '#:allow-address? allow?))
                 (define thd
                   (thread
                     (lambda ()
-                      (server:start-tunnel password address port evt tunnel-group))))
+                      (server:start-tunnel password address port cert private config-table tunnel-group))))
                 (displayln (format "Server: listen to ~a:~a" address port) out)
                 (let loop ()
                   (sync (handle-evt
@@ -212,10 +221,7 @@
                               name (string->symbol mode) password
                               remote-address remote-port
                               dest-address dest-port
-                              ((case mode
-                                (("connect") make-tcp-evt)
-                                (("udp-associate") make-udp-evt))
-                               tunnel-config-table)
+                              tunnel-config-table
                               tunnel-group))))
                     (displayln (format "~a ~a:~a ~a" name local-address local-port mode) out))))
                  tunnels)
