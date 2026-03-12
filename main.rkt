@@ -27,7 +27,7 @@
 
 (require racket/tcp racket/exn racket/match
          openssl
-         "client.rkt" "server.rkt" "config.rkt"
+         "client.rkt" "server.rkt" "config.rkt" "evt.rkt"
          net/ip)
 
 ;; Utilities for network sets
@@ -105,8 +105,7 @@
   ;; http://docs.racket-lang.org/guide/Module_Syntax.html#%28part._main-and-test%29
 
   (require racket/cmdline racket/contract racket/system racket/file racket/pretty
-           raco/command-name
-           "evt.rkt")
+           raco/command-name)
   (define certs (box (ssl-default-verify-sources)))
   (define config (box #f))
   (command-line
