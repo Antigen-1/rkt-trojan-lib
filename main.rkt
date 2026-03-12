@@ -56,7 +56,7 @@
           (sync listen-evt))))
      (lambda (in out)
       (parameterize ((current-thread-group group))
-        (define thd 
+        (void
             (thread
               (lambda ()
                 (with-handlers ((exn:fail?
