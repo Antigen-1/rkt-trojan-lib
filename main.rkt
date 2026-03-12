@@ -55,7 +55,7 @@
         (with-handlers ((exn:fail? (lambda (e) (displayln (format "~a: ~a" name (exn->string e)) stderr) (loop))))
           (sync listen-evt))))
      (lambda (in out)
-       (parameterize ((current-thread-group group))
+      (parameterize ((current-thread-group group))
         (define thd 
             (thread
               (lambda ()
@@ -67,8 +67,8 @@
                                 proxy-address proxy-port
                                 dst-address dst-port
                                 in out)
-                  (displayln (format "~a: A trojan tunnel is closed." name) stdout)))))
-        (loop))))))
+                  (displayln (format "~a: A trojan tunnel is closed." name) stdout))))))
+      (loop)))))
 (define (server:start-tunnel password proxy-address proxy-port cert priv config-table group)
   (define listen-evt (make-tcp-evt config-table))
   (define stderr (current-error-port))
@@ -89,7 +89,8 @@
                                 (displayln (format "Server: ~a" (exn->string e)) stderr))))
                 (define-values (ssl-in ssl-out) (ports->ssl-ports tcp-in tcp-out #:mode 'accept #:close-original? #t #:context ctx))
                 (start-server password ssl-in ssl-out) 
-                (displayln "Server: A trojan tunnel is closed." stdout)))))))))
+                (displayln "Server: A trojan tunnel is closed." stdout)))))
+        (loop)))))
 
 (module+ test
   ;; Any code in this `test` submodule runs when this file is run using DrRacket
