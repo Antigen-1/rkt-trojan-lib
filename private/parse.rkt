@@ -55,6 +55,7 @@
         
     (check-false (parse-request (open-input-bytes #"")))
     (check-false (parse-request (open-input-bytes #"\x01")))
+    (check-false (parse-request (open-input-bytes #"\x03")))
     (check-false (parse-request (open-input-bytes #"\x01\x01")))
     (check-false (parse-request (open-input-bytes #"\x01\x03\x07")))
     (check-false (parse-request (open-input-bytes #"\x01\x03\x0bexample.top")))
