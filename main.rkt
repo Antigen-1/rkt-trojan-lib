@@ -27,7 +27,7 @@
 
 (require racket/tcp racket/exn racket/match
          openssl
-         "client.rkt" "server.rkt" "config.rkt" "evt.rkt"
+         "private/client.rkt" "private/server.rkt" "private/config.rkt" "private/evt.rkt"
          net/ip)
 
 ;; Utilities for network sets
