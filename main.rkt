@@ -45,7 +45,7 @@
 
 ;; Tunnel launchers
 (define (client:start-tunnel name mode passwd proxy-address proxy-port dst-address dst-port config-table group)
-  (define listen-evt ((case mode ((connect) make-tcp-evt) (else make-udp-evt)) config-table))
+  (define listen-evt (case mode ((connect) (make-tcp-evt config-table))))
   (define stderr (current-error-port))
   (define stdout (current-output-port))
   (let loop ()
@@ -69,8 +69,8 @@
                                 in out)
                   (displayln (format "~a: A trojan tunnel is closed." name) stdout))))))
       (loop)))))
-(define (server:start-tunnel password proxy-address proxy-port cert priv config-table group)
-  (define listen-evt (make-tcp-evt config-table))
+(define (server:start-tunnel password mode proxy-address proxy-port cert priv config-table group)
+  (define listen-evt (case mode ((connect) (make-tcp-evt config-table))))
   (define stderr (current-error-port))
   (define stdout (current-output-port)) 
   (define ctx (ssl-make-server-context 'auto #:private-key (and priv (list 'pem priv)) #:certificate-chain cert))
@@ -88,7 +88,7 @@
                               (lambda (e)
                                 (displayln (format "Server: ~a" (exn->string e)) stderr))))
                 (define-values (ssl-in ssl-out) (ports->ssl-ports tcp-in tcp-out #:mode 'accept #:close-original? #t #:context ctx))
-                (start-server password ssl-in ssl-out) 
+                (start-server password mode ssl-in ssl-out) 
                 (displayln "Server: A trojan tunnel is closed." stdout)))))
         (loop)))))
 
@@ -169,7 +169,7 @@
                          (current-thread-group dispatch-group)
                          (ssl-default-verify-sources cert-list))
             (match config-value
-              ((server-config-pattern password address port allow block cert private)
+              ((server-config-pattern password mode address port allow block cert private)
                (let* ((allow-network-set (and allow (pairs->network-set allow)))
                       (block-network-set (and block (pairs->network-set block)))
                       (allow? (lambda (addr)
@@ -186,7 +186,7 @@
                 (define thd
                   (thread
                     (lambda ()
-                      (server:start-tunnel password address port cert private config-table tunnel-group))))
+                      (server:start-tunnel password (string->symbol mode) address port cert private config-table tunnel-group))))
                 (displayln (format "Server: listen to ~a:~a" address port) out)
                 (let loop ()
                   (sync (handle-evt

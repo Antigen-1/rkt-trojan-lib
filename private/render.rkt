@@ -7,8 +7,7 @@
     ((struct request (command address-type address port))
      (bytes-append
       (case command
-        ((connect) #"\x01")
-        ((udp-associate) #"\x03"))
+        ((connect) #"\x01"))
       (case address-type
         ((ipv4) #"\x01")
         ((domain) #"\x03")

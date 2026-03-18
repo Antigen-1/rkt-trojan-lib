@@ -20,6 +20,7 @@
                 ("block" . #f))))))
 (define default-server-config
   #hash(("password" . "abcdefg")
+        ("mode" . "connect")
         ("proxy-address" . "127.0.0.1")
         ("proxy-port" . 9000)
         ("allow" . (("127.0.0.0" "255.0.0.0")))
@@ -41,7 +42,7 @@
     (syntax-case stx ()
       [(_ name mode dest-address dest-port local-address local-port allow-network block-network)
        #'(hash "name" (? string? name)
-               "mode" (and (or "connect" "udp-associate") mode)
+               "mode" (and "connect" mode)
                "dest-address" (? string? dest-address)
                "dest-port" (? port-number? dest-port)
                "local-address" (? string? local-address)
@@ -52,8 +53,9 @@
 (define-match-expander server-config-pattern
   (lambda (stx)
     (syntax-case stx ()
-      [(_ password address port allow-network block-network cert private)
+      [(_ password mode address port allow-network block-network cert private)
        #'(hash "password" (? string? password)
+               "mode" (and "connect" mode)
                "proxy-address" (? string? address)
                "proxy-port" (? port-number? port)
                "allow" (or (and #f allow-network) (? list? allow-network))
@@ -72,7 +74,7 @@
   (check-match default-config
                (config-pattern _ _ _ _))
   (check-match default-server-config
-               (server-config-pattern _ _ _ _ _ _ _))
+               (server-config-pattern _ _ _ _ _ _ _ _))
   (match default-config
     ((config-pattern p ra rp ts)
      (for-each (lambda (t)
@@ -84,7 +86,7 @@
                                       (if bn bn null))))))
                ts)))
   (match default-server-config
-    ((server-config-pattern p "127.0.0.1" 9000 a #f #f #f)
+    ((server-config-pattern p "connect" "127.0.0.1" 9000 a #f #f #f)
      (for-each (lambda (n)
                  (check-match n (network-pattern ip mask)))
                a)))

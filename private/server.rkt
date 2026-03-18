@@ -1,17 +1,17 @@
 #lang racket/base
 (require "parse.rkt" "data.rkt"  racket/match racket/port racket/contract racket/tcp net/ip)
-(provide (contract-out (start-server (-> string?
+(provide (contract-out (start-server (-> string? 'connect
                                          input-port? output-port?
                                          any))))
 
-(define (start-server passwd input output)
+(define (start-server passwd mode input output)
   (with-handlers ((exn:fail? (lambda (e) (close-input-port input) 
                                          (close-output-port output)
                                          (raise e))))
     (define data (input-port->server-data passwd input))
     (match data
       (#f (close-input-port input) (close-output-port output))
-      ((server-data hash (request cmd dst-type dst port) payload)
+      ((server-data hash (request (? (lambda (cmd) (eq? cmd mode)) _) dst-type dst port) payload)
        (define-values (in out) (tcp-connect (if (ip-address? dst) (ip-address->string dst) dst) port))
        (define exn-ch (make-channel))
        (define send-thd

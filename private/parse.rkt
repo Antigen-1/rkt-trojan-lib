@@ -8,7 +8,6 @@
         (define cmd
             (case (read-byte in)
                 ((1) 'connect)
-                ((3) #;'udp-associate (exit))
                 (else (exit))))
         (define dest-type
             (case (read-byte in)

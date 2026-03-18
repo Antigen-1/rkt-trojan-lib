@@ -1,6 +1,6 @@
 #lang racket/base
 (require openssl "render.rkt" "data.rkt" racket/port racket/contract racket/tcp net/cookies/common net/ip)
-(provide (contract-out (start-client (-> (or/c 'connect 'udp-associate)
+(provide (contract-out (start-client (-> 'connect
                                          string?
                                          string? port-number?
                                          string? port-number?
