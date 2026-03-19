@@ -28,6 +28,8 @@
 (require racket/tcp racket/exn racket/match
          openssl
          "private/client.rkt" "private/server.rkt" "private/config.rkt" "private/evt.rkt"
+         ;; This module is responsible for catching and logging all exceptions.
+         "private/logging.rkt"
          net/ip)
 
 ;; Utilities for network sets
@@ -46,13 +48,11 @@
 ;; Tunnel launchers
 (define (client:start-tunnel name mode passwd proxy-address proxy-port dst-address dst-port config-table group)
   (define listen-evt (case mode ((connect) (make-tcp-evt config-table))))
-  (define stderr (current-error-port))
-  (define stdout (current-output-port))
   (let loop ()
     (call-with-values
      (lambda ()
        (let loop ()
-        (with-handlers ((exn:fail? (lambda (e) (displayln (format "~a: ~a" name (exn->string e)) stderr) (loop))))
+        (with-handlers ((exn:fail? (lambda (e) (report 'warning name (exn->string e)) (loop))))
           (sync listen-evt))))
      (lambda (in out)
       (parameterize ((current-thread-group group))
@@ -61,24 +61,22 @@
               (lambda ()
                 (with-handlers ((exn:fail?
                                   (lambda (e)
-                                   (displayln (format "~a: ~a" name (exn->string e)) stderr))))
+                                   (report 'warning name (exn->string e)))))
                   (start-client mode
                                 passwd
                                 proxy-address proxy-port
                                 dst-address dst-port
                                 in out)
-                  (displayln (format "~a: A trojan tunnel is closed." name) stdout))))))
+                  (report 'info name "A trojan tunnel is closed.\n"))))))
       (loop)))))
 (define (server:start-tunnel password mode proxy-address proxy-port cert priv config-table group)
   (define listen-evt (case mode ((connect) (make-tcp-evt config-table))))
-  (define stderr (current-error-port))
-  (define stdout (current-output-port)) 
   (define ctx (ssl-make-server-context 'auto #:private-key (and priv (list 'pem priv)) #:certificate-chain cert))
   (let loop ()
     (call-with-values
       (lambda ()
         (let loop ()
-          (with-handlers ((exn:fail? (lambda (e) (displayln (format "Server: ~a" (exn->string e)) stderr) (loop))))
+          (with-handlers ((exn:fail? (lambda (e) (report 'warning 'Server (exn->string e)) (loop))))
             (sync listen-evt))))
       (lambda (tcp-in tcp-out)
         (parameterize ((current-thread-group group))
@@ -86,10 +84,10 @@
             (lambda () 
               (with-handlers ((exn:fail?
                               (lambda (e)
-                                (displayln (format "Server: ~a" (exn->string e)) stderr))))
+                                (report 'warning 'Server (exn->string e)))))
                 (define-values (ssl-in ssl-out) (ports->ssl-ports tcp-in tcp-out #:mode 'accept #:close-original? #t #:context ctx))
                 (start-server password mode ssl-in ssl-out) 
-                (displayln "Server: A trojan tunnel is closed." stdout)))))
+                (report 'info 'Server "A trojan tunnel is closed.\n")))))
         (loop)))))
 
 (module+ test
@@ -157,12 +155,11 @@
          (unbox certs))
        (define config-value
          (file->value config-path))
-       (define out (current-output-port))
        (define cust (make-custodian (current-custodian)))
        (with-handlers ((exn:break? (lambda (_) (custodian-shutdown-all cust)))
                        (exn:fail? (lambda (e)
                                     (custodian-shutdown-all cust)
-                                    (raise e))))
+                                    (report 'trojan 'error (exn->string e)))))
           (define dispatch-group (parameterize ((current-custodian cust)) (make-thread-group)))
           (define tunnel-group (parameterize ((current-custodian cust)) (make-thread-group)))
           (parameterize ((current-custodian cust)
@@ -187,7 +184,7 @@
                   (thread
                     (lambda ()
                       (server:start-tunnel password (string->symbol mode) address port cert private config-table tunnel-group))))
-                (displayln (format "Server: listen to ~a:~a" address port) out)
+                (report 'Server 'info (format "Listening to ~a:~a.\n" address port))
                 (let loop ()
                   (sync (handle-evt
                          (alarm-evt (+ (current-milliseconds) 5000))
@@ -204,8 +201,6 @@
                        '#:name name
                        '#:local-address local-address
                        '#:local-port local-port
-                       '#:dest-address dest-address
-                       '#:dest-port dest-port
                        '#:allow-address? (let ((allow-network-set (and allow (pairs->network-set allow)))
                                                (block-network-set (and block (pairs->network-set block))))
                                            (lambda (addr)
@@ -223,7 +218,7 @@
                               dest-address dest-port
                               tunnel-config-table
                               tunnel-group))))
-                    (displayln (format "~a ~a:~a ~a" name local-address local-port mode) out))))
+                    (report name 'info (format "The client(~a mode) is listening to ~a:~a.\n" mode local-address local-port)))))
                  tunnels)
               (let loop ()
                 (sync (handle-evt

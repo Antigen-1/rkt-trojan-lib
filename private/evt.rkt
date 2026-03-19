@@ -1,5 +1,6 @@
 #lang racket/base
 (require racket/match racket/tcp racket/contract racket/udp
+         "logging.rkt"
          net/ip net/cookies/common)
 (provide (contract-out
           (make-tcp-evt evt-maker/c))
@@ -17,7 +18,6 @@
            '#:allow-address? allow-address?
            #:open)
      (define l (tcp-listen local-port 4 #f local-address))
-     (define stdout (current-output-port))
      (define evt
        (replace-evt
         l
@@ -27,14 +27,12 @@
                         ((ip) (make-ip-address ad)))
             (if (or (not allow-address?) (allow-address? ip))
                 (begin
-                  (displayln (format "~a: A connection from ~a is accepted." name (ip-address->string ip))
-                             stdout)
+                  (report name 'info (format "A connection from ~a is accepted.\n" (ip-address->string ip)))
                   (handle-evt always-evt (lambda (_) (values in out))))
                 (begin
                   (close-input-port in)
                   (close-output-port out)
-                  (displayln (format "~a: A connection from ~a is rejected." name (ip-address->string ip))
-                             stdout)
+                  (report name 'info (format "A connection from ~a is rejected.\n" (ip-address->string ip)))
                   evt))))))
      evt)))
 
