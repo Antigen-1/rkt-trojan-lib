@@ -8,7 +8,7 @@
 ;; <message>
 (define (format-message name level msg)
     (parameterize ((date-display-format 'chinese))
-        (format "~a ~a(~a):\n~a" name level (date->string (current-date)) msg)))
+        (format "~a ~a(~a):\n~a" name level (date->string (current-date) #t) msg)))
 (define (report name level message)
     (log-message trojan-logger level (if (symbol? name) name (string->symbol name)) (format-message name level message) #f #f))
 
