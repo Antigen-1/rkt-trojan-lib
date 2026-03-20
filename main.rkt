@@ -52,7 +52,7 @@
     (call-with-values
      (lambda ()
        (let loop ()
-        (with-handlers ((exn:fail? (lambda (e) (report 'warning name (exn->string e)) (loop))))
+        (with-handlers ((exn:fail? (lambda (e) (report name 'warning (exn->string e)) (loop))))
           (sync listen-evt))))
      (lambda (in out)
       (parameterize ((current-thread-group group))
@@ -61,13 +61,13 @@
               (lambda ()
                 (with-handlers ((exn:fail?
                                   (lambda (e)
-                                   (report 'warning name (exn->string e)))))
+                                   (report name 'warning (exn->string e)))))
                   (start-client mode
                                 passwd
                                 proxy-address proxy-port
                                 dst-address dst-port
                                 in out)
-                  (report 'info name "A trojan tunnel is closed.\n"))))))
+                  (report name 'info "A trojan tunnel is closed.\n"))))))
       (loop)))))
 (define (server:start-tunnel password mode proxy-address proxy-port cert priv config-table group)
   (define listen-evt (case mode ((connect) (make-tcp-evt config-table))))
@@ -76,7 +76,7 @@
     (call-with-values
       (lambda ()
         (let loop ()
-          (with-handlers ((exn:fail? (lambda (e) (report 'warning 'Server (exn->string e)) (loop))))
+          (with-handlers ((exn:fail? (lambda (e) (report 'Server 'warning (exn->string e)) (loop))))
             (sync listen-evt))))
       (lambda (tcp-in tcp-out)
         (parameterize ((current-thread-group group))
@@ -84,10 +84,10 @@
             (lambda () 
               (with-handlers ((exn:fail?
                               (lambda (e)
-                                (report 'warning 'Server (exn->string e)))))
+                                (report 'Server 'warning (exn->string e)))))
                 (define-values (ssl-in ssl-out) (ports->ssl-ports tcp-in tcp-out #:mode 'accept #:close-original? #t #:context ctx))
                 (start-server password mode ssl-in ssl-out) 
-                (report 'info 'Server "A trojan tunnel is closed.\n")))))
+                (report 'Server 'info "A trojan tunnel is closed.\n")))))
         (loop)))))
 
 (module+ test
