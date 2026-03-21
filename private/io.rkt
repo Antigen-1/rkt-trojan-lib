@@ -5,12 +5,11 @@
 (define (opt:copy-port in out (size 4096))
     (define s (make-bytes size))
     (let loop ()
-        (sync 
-            (handle-evt (read-bytes-avail!-evt s in)
-                (lambda (e/n)
-                    (if (number? e/n)
-                        (begin (write-bytes s out 0 e/n) (loop))
-                        (void)))))))
+        (define e/n (read-bytes-avail! s in))
+        (if (number? e/n)
+            (begin (write-bytes s out 0 e/n) (loop))
+            ;; Special values will be ignored.
+            (void))))
 
 (module+ test
     (require rackunit)
