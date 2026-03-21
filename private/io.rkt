@@ -1,4 +1,4 @@
-#lang typed/racket
+#lang typed/racket/base
 (provide opt:copy-port)
 
 (define (opt:copy-port (in : Input-Port) (out : Output-Port) (size : Exact-Positive-Integer 4096)) : Void
