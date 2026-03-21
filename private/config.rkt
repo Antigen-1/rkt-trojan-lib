@@ -1,9 +1,14 @@
 #lang racket/base
-(require racket/match racket/tcp
+(require racket/match racket/tcp racket/contract
          (prefix-in m: racket/match)
          (for-syntax racket/base))
-(provide (all-defined-out))
+(provide default-config default-server-config tunnel-pattern config-pattern server-config-pattern network-pattern
+         (contract-out (current-buffer-size (parameter/c exact-positive-integer?))))
 
+;; Temporary setting
+(define current-buffer-size (make-parameter 65535))
+
+;; Configuration files
 (define default-config
   #hash(("password" . "abcdefg")
         ("remote-address" . "example1.com")

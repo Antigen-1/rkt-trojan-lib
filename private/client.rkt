@@ -1,5 +1,5 @@
 #lang racket/base
-(require openssl "render.rkt" "data.rkt" racket/port racket/contract racket/tcp net/cookies/common net/ip)
+(require openssl "render.rkt" "data.rkt" "io.rkt" "config.rkt" racket/port racket/contract racket/tcp net/cookies/common net/ip)
 (provide (contract-out (start-client (-> 'connect
                                          string?
                                          string? port-number?
@@ -20,6 +20,7 @@
                             ((4) 'ipv4)
                             ((6) 'ipv6))
                           as))))
+    (define sz (current-buffer-size))
     (define exn-ch (make-channel))
     (define send-thd
       (thread
@@ -28,11 +29,13 @@
            (dynamic-wind
              void
              (lambda ()
-               (copy-port (client-data->input-port
-                           (client-data passwd
-                                        (request mode dst-address-type dst-address-value dst-port)
-                                        payload))
-                          out))
+               (opt:copy-port 
+                (client-data->input-port
+                 (client-data passwd
+                              (request mode dst-address-type dst-address-value dst-port)
+                              payload))
+                out
+                sz))
             (lambda ()
                (close-input-port payload)
                (close-output-port out)))))))
@@ -42,7 +45,7 @@
                   (dynamic-wind
                     void
                     (lambda ()
-                      (copy-port in output))
+                      (opt:copy-port in output sz))
                     (lambda ()
                       (close-input-port in)
                       (close-output-port output)))))))

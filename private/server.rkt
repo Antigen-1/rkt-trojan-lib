@@ -1,5 +1,5 @@
 #lang racket/base
-(require "parse.rkt" "data.rkt"  racket/match racket/port racket/contract racket/tcp net/ip)
+(require "parse.rkt" "data.rkt" "io.rkt" "config.rkt" racket/match racket/port racket/contract racket/tcp net/ip)
 (provide (contract-out (start-server (-> string? 'connect
                                          input-port? output-port?
                                          any))))
@@ -9,6 +9,7 @@
                                          (close-output-port output)
                                          (raise e))))
     (define data (input-port->server-data passwd input))
+    (define sz (current-buffer-size))
     (match data
       (#f (close-input-port input) (close-output-port output))
       ((server-data hash (request (? (lambda (cmd) (eq? cmd mode)) _) dst-type dst port) payload)
@@ -21,7 +22,7 @@
               (dynamic-wind
                 void
                 (lambda ()
-                  (copy-port in output))
+                  (opt:copy-port in output sz))
                 (lambda ()
                   (close-input-port in)
                   (close-output-port output)))))))
@@ -31,7 +32,7 @@
                     (dynamic-wind
                       void
                       (lambda ()
-                        (copy-port input out))
+                        (opt:copy-port input out sz))
                       (lambda ()
                         (close-input-port input)
                         (close-output-port out)))))))
