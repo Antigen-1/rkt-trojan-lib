@@ -1,12 +1,23 @@
 #lang racket/base
 (require racket/match racket/tcp racket/contract
          (prefix-in m: racket/match)
+         openssl
          (for-syntax racket/base))
 (provide default-config default-server-config tunnel-pattern config-pattern server-config-pattern network-pattern
-         (contract-out (current-buffer-size (parameter/c exact-positive-integer?))))
+         (contract-out (current-buffer-size (parameter/c exact-positive-integer?))
+                       (current-cert-list 
+                        (parameter/c
+                          (let ([source/c (or/c path-string?
+                                                (list/c 'directory path-string?)
+                                                (list/c 'win32-store string?)
+                                                (list/c 'macosx-keychain (or/c #f path-string?)))])
+                            (listof source/c))))
+         (current-config-path (parameter/c path-string?))))
 
 ;; Temporary setting
 (define current-buffer-size (make-parameter 65535))
+(define current-cert-list (make-parameter (ssl-default-verify-sources)))
+(define current-config-path (make-parameter #f))
 
 ;; Configuration files
 (define default-config

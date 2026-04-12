@@ -103,22 +103,19 @@
   ;; does not run when this file is required by another module. Documentation:
   ;; http://docs.racket-lang.org/guide/Module_Syntax.html#%28part._main-and-test%29
 
-  (require racket/cmdline racket/contract racket/system racket/file racket/pretty
+  (require racket/cmdline racket/system racket/file racket/pretty
            raco/command-name)
-  (define certs (box (ssl-default-verify-sources)))
-  (define config (box #f))
-  (define buffer-size (box 65535))
   (command-line
     #:program (short-program+command-name)
     #:once-each
     [("--config")
      c
      "Read this configuration file when `start` is run, or generate a new configuration file when `new-config` or `new-server-config` is run."
-     (set-box! config c)]
+     (current-config-path c)]
     [("--buffer-size")
      sz
      "Set the buffer size. It is ignored when `new-config` or `new-server-config` is run."
-     (set-box! buffer-size (string->number sz))]
+     (current-buffer-size (cond ((string->number sz)) (else sz)))]
     #:multi
     [("--cert-dir") c
                     "Add other directories that contain verification sources. Files are automatically rehashed. They are ignored when `new-config` or `new-server-config` is run."
@@ -131,20 +128,12 @@
                                 (displayln "Cannot find c_rehash executable.")
                                 (displayln (format "~a should contain PEM files with hashed symbolic links." c)))))
                         (raise-argument-error 'command-line "directory-exists?" c))
-                    (set-box! certs (cons `(directory ,c) (unbox certs)))]
-    [("--ignore-certs") "Ignore current verification sources. They are ignored when `new-config` or `new-server-config` is run." (set-box! certs null)]
+                    (current-cert-list (cons `(directory ,c) (current-cert-list)))]
+    [("--ignore-certs") "Ignore current verification sources. They are ignored when `new-config` or `new-server-config` is run." (current-cert-list null)]
     #:args (command)
-    (define/contract config-path path-string? (unbox config))
-    (define/contract buffer-size-number
-      exact-positive-integer?
-      (unbox buffer-size))
-    (define/contract cert-list
-       (let ([source/c (or/c path-string?
-                             (list/c 'directory path-string?)
-                             (list/c 'win32-store string?)
-                             (list/c 'macosx-keychain (or/c #f path-string?)))])
-         (listof source/c))
-      (unbox certs))
+    (define config-path (current-config-path))
+    (define cert-list (current-cert-list))
+    (define buffer-size-number (current-buffer-size))
     (case command
       (("new-config")
        (call-with-output-file
